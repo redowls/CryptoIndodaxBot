@@ -32,7 +32,7 @@ dry run for a while and agree with what it wants to do.
 | `INDODAX_API_KEY` / `INDODAX_API_SECRET` | ✅ set, **authenticated** (uid 10825579, `canTrade`, `canWithdraw: false`) |
 | IP whitelist (`185.202.236.11`) | ✅ working — see the IPv6 note below |
 | `TELEGRAM_TOKEN` | ✅ set (`@CryptoIndodaxBot`) |
-| `TELEGRAM_CHAT_ID` | ❌ press Start on the bot, then run the resolver |
+| `TELEGRAM_CHAT_ID` | ✅ `7739672535` — delivery verified |
 | Account funded | ❌ **empty — 0 IDR, 0 coins** |
 
 1. **Deposit IDR.** The account authenticates but holds nothing, so the bot
@@ -41,13 +41,13 @@ dry run for a while and agree with what it wants to do.
    sensibly (at Rp200.000 the majors still size above the floor, but each
    position is only ~Rp66.000).
 
-2. **Telegram chat id.** Open Telegram, message `@CryptoIndodaxBot`, press
-   Start, then:
+Telegram is wired up and verified. If the chat id ever needs re-resolving
+(new bot token, different chat):
 
-   ```bash
-   python -m cryptoindodax.notify resolve   # prints TELEGRAM_CHAT_ID=...
-   python -m cryptoindodax.notify test      # confirm delivery
-   ```
+```bash
+python -m cryptoindodax.notify resolve   # prints TELEGRAM_CHAT_ID=...
+python -m cryptoindodax.notify test      # confirm delivery
+```
 
 ## Layout
 
