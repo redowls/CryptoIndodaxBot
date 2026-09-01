@@ -29,21 +29,19 @@ dry run for a while and agree with what it wants to do.
 
 | Item | Status |
 | --- | --- |
-| `INDODAX_API_KEY` | ✅ set in `.env` |
-| `INDODAX_API_SECRET` | ❌ **missing — required** |
-| IP whitelist on the API key | ❌ **required for trading** |
+| `INDODAX_API_KEY` / `INDODAX_API_SECRET` | ✅ set, **authenticated** (uid 10825579, `canTrade`, `canWithdraw: false`) |
+| IP whitelist (`185.202.236.11`) | ✅ working — see the IPv6 note below |
 | `TELEGRAM_TOKEN` | ✅ set (`@CryptoIndodaxBot`) |
 | `TELEGRAM_CHAT_ID` | ❌ press Start on the bot, then run the resolver |
+| Account funded | ❌ **empty — 0 IDR, 0 coins** |
 
-1. **API secret.** Indodax shows the secret only once, when the key is created.
-   Nothing private can be called without it — the key alone is not enough.
-   Put it in `.env` as `INDODAX_API_SECRET=`.
+1. **Deposit IDR.** The account authenticates but holds nothing, so the bot
+   reports `account has no equity` and stops. With `MAX_POSITIONS=3` and a
+   Rp10.000 per-order floor, roughly **Rp1.000.000+** makes the sizing behave
+   sensibly (at Rp200.000 the majors still size above the floor, but each
+   position is only ~Rp66.000).
 
-2. **IP whitelist.** TAPI v2 makes IP whitelisting *mandatory* for spot trading.
-   Add this server's IP to the key at Indodax → Settings → API, or every order
-   will be rejected. Read-only calls work without it.
-
-3. **Telegram chat id.** Open Telegram, message `@CryptoIndodaxBot`, press
+2. **Telegram chat id.** Open Telegram, message `@CryptoIndodaxBot`, press
    Start, then:
 
    ```bash
@@ -67,6 +65,7 @@ cryptoindodax/
   policy.py      Claude daily overlay, clamped so it can only tighten
   broker.py      Indodax TAPI v2 client
   trader.py      hourly cycle: reconcile → exits → entries
+  net.py         pins outbound traffic to IPv4 so the IP whitelist matches
   notify.py      Telegram
 ```
 
@@ -76,7 +75,7 @@ cryptoindodax/
 python -m cryptoindodax.snapshot          # capture one hourly snapshot
 python -m cryptoindodax.digest            # summarise today's snapshots
 python -m cryptoindodax.trader --dry-run  # decide, place nothing
-python -m pytest tests/ -q                # 105 tests
+python -m pytest tests/ -q                # 109 tests
 ```
 
 Suggested cron (not installed yet — mirrors CryptoAutoBot's cadence):
@@ -109,7 +108,21 @@ into the bar shape the old pipeline already spoke.
 | Fees | separate | taken **in-asset** → held quantity drifts below the fill |
 | Sandbox | paper account | **none** |
 
-### Two traps worth remembering
+### Three traps worth remembering
+
+**IPv6 silently breaks the IP whitelist.** This host has both IPv4 and IPv6, and
+`api.indodax.com` (Cloudflare) publishes both A and AAAA records — so Python's
+`getaddrinfo` returns IPv6 first and every request left over the v6 address,
+while the API key whitelists the v4 one. Indodax answered `[-2015] Unauthorized
+IP address` on completely valid credentials. `net.force_ipv4()` pins the address
+family at import; `INDODAX_FORCE_IPV4=false` disables it. Check what the
+exchange actually sees with:
+
+```python
+from cryptoindodax import broker, net
+net.source_address_for("api.indodax.com")   # -> 185.202.236.11
+```
+
 
 **`/api/pairs` field names are misleading.** `price_round` (8, or 6 for SHIB) is
 the decimals allowed on the *coin quantity*; `volume_precision` is `0` on every

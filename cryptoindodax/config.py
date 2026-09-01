@@ -78,6 +78,12 @@ RECV_WINDOW_MS = 5000
 INDODAX_KEY = os.getenv("INDODAX_API_KEY")
 INDODAX_SECRET = os.getenv("INDODAX_API_SECRET")
 
+# This host has both IPv4 and IPv6, and api.indodax.com publishes both A and
+# AAAA records — so requests leave over IPv6 by default and the key's IPv4
+# whitelist never matches ([-2015] Unauthorized IP address). Pin to IPv4 so the
+# source address is deterministic and whitelistable. See net.py.
+FORCE_IPV4 = os.getenv("INDODAX_FORCE_IPV4", "true").lower() == "true"
+
 # --- Phase B trading ------------------------------------------------------
 # NOTE: Indodax has no usable paper/sandbox endpoint (demo-indodax.com sits
 # behind a Cloudflare Access sign-in wall), so unlike CryptoAutoBot — which

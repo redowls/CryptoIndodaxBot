@@ -283,3 +283,21 @@ def test_sellable_qty_uses_free_balance_not_ledger_qty():
 
 def test_sellable_qty_falls_back_to_ledger_when_unknown():
     assert trader._sellable_qty({"symbol": "SOL", "qty": 2.0}, {}) == pytest.approx(2.0)
+
+
+def test_unfunded_account_reports_plainly_not_as_circuit_breaker(tmp_path, monkeypatch, capsys):
+    """equity<=0 trips circuit_breaker_tripped by design; an empty account must
+    not be reported as a 24h loss halt."""
+    _paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(config, "INDODAX_KEY", "k")
+    monkeypatch.setattr(config, "INDODAX_SECRET", "s")
+    monkeypatch.setattr(broker, "get_account",
+                        lambda **k: {"equity": 0.0, "cash": 0.0, "balances": {},
+                                     "status": "EMPTY"})
+    monkeypatch.setattr(broker, "get_positions", lambda **k: [])
+    _write_snapshot(tmp_path / "snaps", _snapshot(), NOW)
+
+    trader.run(dry_run=True, now=NOW)
+    out = capsys.readouterr().out
+    assert "no equity" in out
+    assert "circuit breaker" not in out

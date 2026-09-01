@@ -217,6 +217,15 @@ def run(dry_run=False, now=None):
             if updated["stop"] != pos["stop"]:
                 log(f"trail {pos['symbol']}: stop -> {config.fmt_idr(updated['stop'])}")
 
+    # An unfunded account is not a risk event — say so plainly rather than
+    # letting the circuit breaker (which treats equity<=0 as tripped) claim a
+    # 24h loss that never happened.
+    if equity <= 0:
+        log("account has no equity — deposit IDR before trading; nothing to do")
+        if not dry_run:
+            ledger.save(led)
+        return
+
     if risk.circuit_breaker_tripped(led["closed"], equity, now=now):
         log(f"circuit breaker: 24h realized loss >= {config.CIRCUIT_BREAKER_PCT:.0%} "
             "of equity — no new entries")

@@ -23,11 +23,15 @@ import urllib.parse
 
 import requests
 
-from . import config
+from . import config, net
 
 
 class BrokerError(Exception):
     pass
+
+
+if config.FORCE_IPV4:
+    net.force_ipv4()
 
 
 def _credentials():

@@ -18,11 +18,15 @@ from datetime import datetime, timezone
 
 import requests
 
-from . import config
+from . import config, net
 
 
 class FetchError(Exception):
     pass
+
+
+if config.FORCE_IPV4:
+    net.force_ipv4()
 
 
 def _to_epoch(value):
