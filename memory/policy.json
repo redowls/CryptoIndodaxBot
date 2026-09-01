@@ -1,0 +1,7 @@
+{
+  "date": "2026-09-01",
+  "regime_hint": "auto",
+  "blocked_symbols": [],
+  "max_positions": 3,
+  "notes": "Fresh default for CryptoIndodaxBot — no Indodax trading history yet. The daily Claude routine overwrites this; the overlay may only tighten (see policy.py clamps)."
+}
