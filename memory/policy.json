@@ -1,7 +1,1 @@
-{
-  "date": "2026-09-01",
-  "regime_hint": "auto",
-  "blocked_symbols": [],
-  "max_positions": 3,
-  "notes": "Fresh default for CryptoIndodaxBot — no Indodax trading history yet. The daily Claude routine overwrites this; the overlay may only tighten (see policy.py clamps)."
-}
+{"date": "2026-09-01", "regime_hint": "neutral", "blocked_symbols": ["UNI"], "max_positions": 2, "notes": "Zero coins satisfy EMA-up + ADX>25 + RSI<70 - UNI has the strength (ADX 44.3) but is overbought at RSI 71.8 and burned its intraday bounce, while DOT (ADX 20) and LINK (ADX 14.3) have headroom but no confirmed trend; BTC regime gate is EMA-down at ADX 14.4 (sub-15 = noise) on the first live-money session with only 4 snapshots, so tighten rather than force a trade."}
