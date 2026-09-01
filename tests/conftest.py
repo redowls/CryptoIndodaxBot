@@ -2,6 +2,17 @@ import pytest
 
 from cryptoindodax import pairs
 
+PERMISSIVE = {"trade_min_base_currency": 10_000, "trade_min_traded_currency": 0.0,
+              "price_round": 8, "trade_fee_percent_taker": 0.2}
+
+
+class _AnyPair(dict):
+    """Pair metadata for any ticker_id, so tests don't break when the watchlist
+    changes. Real per-pair constraints are exercised in test_pairs.py."""
+
+    def get(self, key, default=None):
+        return PERMISSIVE
+
 
 @pytest.fixture(autouse=True)
 def _no_network_pair_metadata(monkeypatch, request):
@@ -13,9 +24,4 @@ def _no_network_pair_metadata(monkeypatch, request):
     """
     if request.node.fspath.basename == "test_pairs.py":
         return
-    permissive = {"trade_min_base_currency": 10_000, "trade_min_traded_currency": 0.0,
-                  "price_round": 8, "trade_fee_percent_taker": 0.2}
-    monkeypatch.setattr(pairs, "load",
-                        lambda *a, **k: {"btc_idr": permissive, "eth_idr": permissive,
-                                         "sol_idr": permissive, "doge_idr": permissive,
-                                         "xrp_idr": permissive})
+    monkeypatch.setattr(pairs, "load", lambda *a, **k: _AnyPair())

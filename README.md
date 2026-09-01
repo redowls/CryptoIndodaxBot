@@ -75,7 +75,7 @@ cryptoindodax/
 python -m cryptoindodax.snapshot          # capture one hourly snapshot
 python -m cryptoindodax.digest            # summarise today's snapshots
 python -m cryptoindodax.trader --dry-run  # decide, place nothing
-python -m pytest tests/ -q                # 109 tests
+python -m pytest tests/ -q                # 112 tests
 ```
 
 Suggested cron (not installed yet — mirrors CryptoAutoBot's cadence):
@@ -134,6 +134,23 @@ floors `0.0087 BTC` to `0`, and the bot silently cannot buy BTC or ETH.
 so after a buy the account holds slightly less than the fill reported. Selling
 the ledger's number is rejected for insufficient funds — `trader._sellable_qty`
 uses the exchange's free balance, floored to precision.
+
+## Watchlist
+
+```python
+WATCHLIST = ["BTC", "ETH", "UNI", "DOT", "LINK"]   # cryptoindodax/config.py
+```
+
+Narrowed from 10 coins to 5 on 2026-09-01. All five are live `*_idr` pairs.
+
+**BTC must stay on the list.** `strategy.regime()` reads BTC's 1D timeframe to
+set the `risk_on` / `neutral` / `risk_off` gate that every other coin is judged
+against. Drop BTC and it is absent from the snapshot, `regime()` falls back to
+`neutral`, and the ADX entry bar silently rises from 25 to 30 for everything —
+a much stricter bot with no visible cause. There is a test for this.
+
+Note that `MAX_POSITIONS` is still 3, so the bot can hold 3 of 5 names at once —
+a more concentrated book than 3 of 10. Lower it to 2 if that feels too heavy.
 
 ## Strategy
 

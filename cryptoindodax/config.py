@@ -25,11 +25,14 @@ def _load_dotenv(path=ROOT / ".env"):
 _load_dotenv()
 
 # Indodax-tradable universe. Every one of these is a live *_idr pair (verified
-# against /api/pairs) — same 10 coins CryptoAutoBot tracked on Alpaca, so the
-# strategy thresholds distilled in memory/insights.md carry over unchanged.
-# BNB and ADA are also listed on Indodax (they were not on Alpaca) if you want
-# to widen the universe later.
-WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI"]
+# against /api/pairs). Narrowed from CryptoAutoBot's 10 coins to 5 on
+# 2026-09-01 at the user's request.
+#
+# BTC must stay on this list whatever else changes: strategy.regime() reads
+# BTC's 1D timeframe to set the risk_on/neutral/risk_off gate for every other
+# coin, and falls back to "neutral" if BTC is absent — which silently raises
+# the ADX entry bar from 25 to 30 across the board.
+WATCHLIST = ["BTC", "ETH", "UNI", "DOT", "LINK"]
 
 # Everything is quoted in Indonesian Rupiah.
 QUOTE = "IDR"

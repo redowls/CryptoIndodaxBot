@@ -122,3 +122,15 @@ def test_fetch_pairs_keys_by_ticker_id(monkeypatch):
 def test_pair_helpers_use_idr_forms():
     assert config.pair("btc") == "BTCIDR"
     assert config.pair_id("BTC") == "btc_idr"
+
+
+def test_watchlist_is_the_five_selected_coins():
+    assert config.WATCHLIST == ["BTC", "ETH", "UNI", "DOT", "LINK"]
+
+
+def test_watchlist_contains_btc_for_the_regime_gate():
+    """strategy.regime() reads BTC's 1D to set risk_on/neutral/risk_off for
+    every coin. Without BTC in the watchlist there is no BTC in the snapshot,
+    regime() falls back to 'neutral', and the ADX entry bar silently rises
+    from 25 to 30 across the board."""
+    assert "BTC" in config.WATCHLIST

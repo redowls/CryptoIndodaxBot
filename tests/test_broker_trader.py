@@ -79,7 +79,7 @@ def test_post_signs_body_not_url(creds, monkeypatch):
 
 def test_market_sell_is_sized_in_coin(creds, monkeypatch):
     seen = _capture(monkeypatch, {"orderId": 1})
-    broker.market_sell_qty("SOL", 2.5)
+    broker.market_sell_qty("DOT", 2.5)
     body = dict(urllib.parse.parse_qsl(seen["data"]))
     assert body["side"] == "SELL" and body["quantity"] == "2.5"
     assert "quoteOrderQty" not in body
@@ -97,42 +97,49 @@ def test_error_code_in_body_raises(creds, monkeypatch):
 def test_get_balances_parses_floats(creds, monkeypatch):
     _capture(monkeypatch, {"balances": [
         {"asset": "IDR", "free": "5000000", "locked": "0"},
-        {"asset": "SOL", "free": "2.5", "locked": "0.5"}]})
+        {"asset": "DOT", "free": "2.5", "locked": "0.5"}]})
     b = broker.get_balances()
     assert b["IDR"]["free"] == 5_000_000.0
-    assert b["SOL"] == {"free": 2.5, "locked": 0.5}
+    assert b["DOT"] == {"free": 2.5, "locked": 0.5}
 
 
 def test_get_account_marks_equity_in_idr(creds, monkeypatch):
     _capture(monkeypatch, {"balances": [
         {"asset": "IDR", "free": "5000000", "locked": "0"},
-        {"asset": "SOL", "free": "2.0", "locked": "0"}]})
-    acct = broker.get_account(price_by_symbol={"SOL": 1_800_000})
+        {"asset": "DOT", "free": "2.0", "locked": "0"}]})
+    acct = broker.get_account(price_by_symbol={"DOT": 15_288})
     assert acct["cash"] == 5_000_000.0
-    assert acct["equity"] == 5_000_000.0 + 2.0 * 1_800_000
+    assert acct["equity"] == 5_000_000.0 + 2.0 * 15_288
 
 
 def test_get_account_ignores_coin_with_no_mark(creds, monkeypatch):
     _capture(monkeypatch, {"balances": [
         {"asset": "IDR", "free": "1000000", "locked": "0"},
-        {"asset": "SOL", "free": "2.0", "locked": "0"}]})
+        {"asset": "DOT", "free": "2.0", "locked": "0"}]})
     # no price supplied → the coin is not guessed into equity
     assert broker.get_account(price_by_symbol={})["equity"] == 1_000_000.0
 
 
 def test_get_positions_skips_dust(creds, monkeypatch):
-    balances = {"SOL": {"free": 2.0, "locked": 0.0},
-                "DOGE": {"free": 0.5, "locked": 0.0}}   # 0.5 * 1472 = Rp736 → dust
-    pos = broker.get_positions(price_by_symbol={"SOL": 1_800_000, "DOGE": 1_472},
+    balances = {"DOT": {"free": 100.0, "locked": 0.0},
+                "LINK": {"free": 0.02, "locked": 0.0}}   # 0.02 * 203_000 = Rp4.060 → dust
+    pos = broker.get_positions(price_by_symbol={"DOT": 15_288, "LINK": 203_000},
                                balances=balances)
-    assert [p["symbol"] for p in pos] == ["SOL"]
-    assert pos[0]["qty"] == 2.0 and pos[0]["free_qty"] == 2.0
+    assert [p["symbol"] for p in pos] == ["DOT"]
+    assert pos[0]["qty"] == 100.0 and pos[0]["free_qty"] == 100.0
 
 
 def test_get_positions_counts_locked_qty(creds, monkeypatch):
-    pos = broker.get_positions(price_by_symbol={"SOL": 1_800_000},
-                               balances={"SOL": {"free": 1.0, "locked": 3.0}})
+    pos = broker.get_positions(price_by_symbol={"DOT": 15_288},
+                               balances={"DOT": {"free": 1.0, "locked": 3.0}})
     assert pos[0]["qty"] == 4.0 and pos[0]["free_qty"] == 1.0
+
+
+def test_get_positions_ignores_coin_outside_watchlist(creds, monkeypatch):
+    """A balance in a coin the bot does not track is not a position."""
+    pos = broker.get_positions(price_by_symbol={"SOL": 1_800_000},
+                               balances={"SOL": {"free": 5.0, "locked": 0.0}})
+    assert pos == []
 
 
 # --- broker: fills --------------------------------------------------------
@@ -166,12 +173,12 @@ def test_avg_fill_price_is_quantity_weighted(creds, monkeypatch):
     _capture(monkeypatch, {"data": [
         {"qty": "1.0", "price": "100"},
         {"qty": "3.0", "price": "200"}]})
-    assert broker.avg_fill_price("SOL", "o1") == pytest.approx(175.0)
+    assert broker.avg_fill_price("DOT", "o1") == pytest.approx(175.0)
 
 
 def test_avg_fill_price_none_when_no_fills(creds, monkeypatch):
     _capture(monkeypatch, {"data": []})
-    assert broker.avg_fill_price("SOL", "o1") is None
+    assert broker.avg_fill_price("DOT", "o1") is None
 
 
 # --- trader helpers -------------------------------------------------------
@@ -188,7 +195,7 @@ def _snapshot(now=NOW):
                 "timeframes": {"1H": _tf(**kw), "4H": _tf(), "1D": _tf(adx=25)}}
     return {
         "captured_at": now.isoformat(),
-        "symbols": [coin("BTC"), coin("SOL", adx=40), coin("DOGE", adx=10)],
+        "symbols": [coin("BTC"), coin("DOT", adx=40), coin("LINK", adx=10)],
     }
 
 
@@ -223,7 +230,7 @@ def test_load_current_snapshot_fresh_and_stale(tmp_path, monkeypatch):
 
 def test_prices_from_snapshot_collects_1h_closes():
     marks = trader.prices_from_snapshot(_snapshot())
-    assert marks["SOL"] == 1_120_000 and set(marks) == {"BTC", "SOL", "DOGE"}
+    assert marks["DOT"] == 1_120_000 and set(marks) == {"BTC", "DOT", "LINK"}
 
 
 def test_dry_run_enters_best_candidate(tmp_path, monkeypatch, capsys):
@@ -234,8 +241,8 @@ def test_dry_run_enters_best_candidate(tmp_path, monkeypatch, capsys):
     trader.run(dry_run=True, now=NOW)
     out = capsys.readouterr().out
     assert "regime: computed risk_on" in out
-    assert "DRY-RUN entry SOL" in out
-    assert "reject DOGE" in out
+    assert "DRY-RUN entry DOT" in out
+    assert "reject LINK" in out
     assert "Rp" in out                       # amounts are reported in rupiah
     assert not (tmp_path / "trades" / "trades.json").exists()
 
@@ -244,15 +251,15 @@ def test_dry_run_exit_on_stop_hit(tmp_path, monkeypatch, capsys):
     _paths(monkeypatch, tmp_path)
     monkeypatch.setattr(trader, "fetch_extras", lambda syms, now=None: _good_extras(syms))
     snap = _snapshot()
-    snap["symbols"][1]["timeframes"]["1H"]["last_close"] = 900_000.0  # SOL below stop
+    snap["symbols"][1]["timeframes"]["1H"]["last_close"] = 900_000.0  # DOT below stop
     _write_snapshot(tmp_path / "snaps", snap, NOW)
 
     led = ledger.load(tmp_path / "trades" / "trades.json")
-    ledger.open_position(led, "SOL", 2.0, 1_000_000.0, 20_000.0, "o1", now=NOW)
+    ledger.open_position(led, "DOT", 2.0, 1_000_000.0, 20_000.0, "o1", now=NOW)
     ledger.save(led, tmp_path / "trades" / "trades.json")
 
     trader.run(dry_run=True, now=NOW)
-    assert "DRY-RUN exit SOL: stop" in capsys.readouterr().out
+    assert "DRY-RUN exit DOT: stop" in capsys.readouterr().out
 
 
 def test_run_requires_trading_enabled(monkeypatch, capsys):
@@ -276,13 +283,13 @@ def test_circuit_breaker_blocks_entries(tmp_path, monkeypatch, capsys):
 
 def test_sellable_qty_uses_free_balance_not_ledger_qty():
     """Fees are taken in-asset, so the held quantity drifts below the fill."""
-    pos = {"symbol": "SOL", "qty": 2.0}
-    live = {"SOL": {"symbol": "SOL", "qty": 1.994, "free_qty": 1.994}}
+    pos = {"symbol": "DOT", "qty": 2.0}
+    live = {"DOT": {"symbol": "DOT", "qty": 1.994, "free_qty": 1.994}}
     assert trader._sellable_qty(pos, live) == pytest.approx(1.994)
 
 
 def test_sellable_qty_falls_back_to_ledger_when_unknown():
-    assert trader._sellable_qty({"symbol": "SOL", "qty": 2.0}, {}) == pytest.approx(2.0)
+    assert trader._sellable_qty({"symbol": "DOT", "qty": 2.0}, {}) == pytest.approx(2.0)
 
 
 def test_unfunded_account_reports_plainly_not_as_circuit_breaker(tmp_path, monkeypatch, capsys):
