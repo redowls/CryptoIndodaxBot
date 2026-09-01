@@ -130,7 +130,14 @@ BLOWOFF_RSI = 80.0
 LATE_ENTRY_DAY_PCT = 5.0    # skip coins already up more than this on the day
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# One or more chat ids, comma-separated — every alert goes to all of them.
+# A single id keeps working unchanged.
+TELEGRAM_CHAT_IDS = [c.strip() for c in (os.getenv("TELEGRAM_CHAT_ID") or "").split(",")
+                     if c.strip()]
+
+# Back-compat alias: the first configured chat.
+TELEGRAM_CHAT_ID = TELEGRAM_CHAT_IDS[0] if TELEGRAM_CHAT_IDS else None
 
 
 def fmt_idr(amount) -> str:

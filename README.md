@@ -32,7 +32,7 @@ dry run for a while and agree with what it wants to do.
 | `INDODAX_API_KEY` / `INDODAX_API_SECRET` | ✅ set, **authenticated** (uid 10825579, `canTrade`, `canWithdraw: false`) |
 | IP whitelist (`185.202.236.11`) | ✅ working — see the IPv6 note below |
 | `TELEGRAM_TOKEN` | ✅ set (`@CryptoIndodaxBot`) |
-| `TELEGRAM_CHAT_ID` | ✅ `7739672535` — delivery verified |
+| `TELEGRAM_CHAT_ID` | ✅ `7739672535,817923991` — both verified |
 | Account funded | ❌ **empty — 0 IDR, 0 coins** |
 
 1. **Deposit IDR.** The account authenticates but holds nothing, so the bot
@@ -41,8 +41,17 @@ dry run for a while and agree with what it wants to do.
    sensibly (at Rp200.000 the majors still size above the floor, but each
    position is only ~Rp66.000).
 
-Telegram is wired up and verified. If the chat id ever needs re-resolving
-(new bot token, different chat):
+Telegram is wired up and verified. `TELEGRAM_CHAT_ID` accepts a
+**comma-separated list** — every alert fans out to all of them, and one chat
+failing (blocked bot, deleted chat) never stops the others. To add a recipient,
+have them press Start on the bot, then append their id:
+
+```
+TELEGRAM_CHAT_ID=7739672535,817923991
+```
+
+To re-resolve ids (`resolve` marks which are already configured; `test` sends to
+each one separately):
 
 ```bash
 python -m cryptoindodax.notify resolve   # prints TELEGRAM_CHAT_ID=...
@@ -75,7 +84,7 @@ cryptoindodax/
 python -m cryptoindodax.snapshot          # capture one hourly snapshot
 python -m cryptoindodax.digest            # summarise today's snapshots
 python -m cryptoindodax.trader --dry-run  # decide, place nothing
-python -m pytest tests/ -q                # 112 tests
+python -m pytest tests/ -q                # 120 tests
 ```
 
 Suggested cron (not installed yet — mirrors CryptoAutoBot's cadence):

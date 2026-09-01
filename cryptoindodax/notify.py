@@ -1,7 +1,11 @@
 """Telegram notifications (best-effort — a notify failure never blocks trading).
 
+Alerts fan out to every id in TELEGRAM_CHAT_IDS. One chat failing (blocked bot,
+deleted chat, network blip) must never stop the others from being told, so each
+send is isolated and the result is True if *any* delivery succeeded.
+
 Run `python -m cryptoindodax.notify resolve` after pressing Start on the bot to
-discover the chat id, or `... test` to send a delivery check.
+discover chat ids, or `... test` to send a delivery check to all of them.
 """
 import sys
 
@@ -10,18 +14,28 @@ import requests
 from . import config
 
 
-def send(text):
-    if not (config.TELEGRAM_TOKEN and config.TELEGRAM_CHAT_ID):
+def send_to(chat_id, text):
+    """Deliver to one chat. Never raises."""
+    if not (config.TELEGRAM_TOKEN and chat_id):
         return False
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": config.TELEGRAM_CHAT_ID, "text": text},
+            json={"chat_id": chat_id, "text": text},
             timeout=15,
         )
         return r.status_code == 200
     except requests.RequestException:
         return False
+
+
+def send(text):
+    """Fan out to every configured chat. True if at least one delivery landed."""
+    delivered = False
+    for chat_id in config.TELEGRAM_CHAT_IDS:
+        # `or` short-circuits, so keep the call first — every chat must be tried
+        delivered = send_to(chat_id, text) or delivered
+    return delivered
 
 
 def resolve_chat_id():
@@ -50,13 +64,20 @@ def _main(argv):
             print("No chats yet — open Telegram, find the bot, and press Start.")
             return 1
         for cid, who in found:
-            print(f"TELEGRAM_CHAT_ID={cid}  ({who})")
+            mark = "configured" if str(cid) in config.TELEGRAM_CHAT_IDS else "NOT configured"
+            print(f"TELEGRAM_CHAT_ID={cid}  ({who}) — {mark}")
         return 0
     if cmd == "test":
-        ok = send("CryptoIndodaxBot: delivery test ✅")
-        print("sent" if ok else "FAILED (check TELEGRAM_TOKEN / TELEGRAM_CHAT_ID)")
-        return 0 if ok else 1
-    print(f"usage: python -m cryptoindodax.notify [resolve|test]")
+        if not config.TELEGRAM_CHAT_IDS:
+            print("no chat ids configured")
+            return 1
+        rc = 0
+        for cid in config.TELEGRAM_CHAT_IDS:
+            ok = send_to(cid, "CryptoIndodaxBot: delivery test ✅")
+            print(f"  {cid}: {'sent' if ok else 'FAILED'}")
+            rc |= 0 if ok else 1
+        return rc
+    print("usage: python -m cryptoindodax.notify [resolve|test]")
     return 2
 
 
