@@ -84,6 +84,33 @@ def fetch_bars(pair: str, timeframe: str, start=None, end=None, session=None):
     return out
 
 
+def fetch_tickers(session=None):
+    """Last/bid/ask for every pair in one call, keyed by ticker_id.
+
+    /api/ticker_all returns all ~500 pairs in a single response, so a balance in
+    any coin — watchlist or not — can be priced without a request per asset.
+    Values arrive as strings; anything unparseable is skipped rather than
+    poisoning a report with a NaN.
+    """
+    getter = (session or requests).get
+    try:
+        r = getter(f"{config.PUBLIC_BASE_URL}/api/ticker_all",
+                   headers={"User-Agent": config.USER_AGENT}, timeout=20)
+        r.raise_for_status()
+        payload = r.json()
+    except Exception as e:
+        raise FetchError(f"tickers: {e}") from e
+    out = {}
+    for ticker_id, t in (payload.get("tickers") or {}).items():
+        try:
+            out[ticker_id] = {"last": float(t["last"]),
+                              "buy": float(t["buy"]),
+                              "sell": float(t["sell"])}
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def fetch_pairs(session=None):
     """Pair metadata: order minimums and volume precision, keyed by ticker_id."""
     getter = (session or requests).get

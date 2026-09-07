@@ -75,7 +75,8 @@ cryptoindodax/
   broker.py      Indodax TAPI v2 client
   trader.py      hourly cycle: reconcile → exits → entries
   net.py         pins outbound traffic to IPv4 so the IP whitelist matches
-  notify.py      Telegram
+  notify.py      Telegram (outgoing alerts)
+  saldo.py       Telegram commands — /saldo account report, cron-polled
 ```
 
 ## Running
@@ -84,15 +85,30 @@ cryptoindodax/
 python -m cryptoindodax.snapshot          # capture one hourly snapshot
 python -m cryptoindodax.digest            # summarise today's snapshots
 python -m cryptoindodax.trader --dry-run  # decide, place nothing
-python -m pytest tests/ -q                # 120 tests
+python -m cryptoindodax.saldo print       # render the /saldo report locally
+python -m pytest tests/ -q                # 144 tests
 ```
 
-Suggested cron (not installed yet — mirrors CryptoAutoBot's cadence):
+Installed cron:
 
 ```cron
-5  * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.snapshot >> logs/snapshot.log 2>&1
-12 * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.trader  >> logs/trader.log 2>&1
+7  * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.snapshot >> logs/snapshot.log 2>&1
+14 * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.trader   >> logs/trader.log 2>&1
+*  * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.saldo    >> logs/saldo.log 2>&1
+0  0 * * * /root/claude-routines/run-routine.sh cryptoindodax-daily   # 00:00 WIB
 ```
+
+## Telegram commands
+
+`/saldo` replies with total assets, available rupiah, and per-coin qty, cost
+basis, current value and P/L. Cost basis comes from the ledger's open positions
+— a coin the bot never bought is listed with its value but no P/L rather than
+being marked at its current price as a fake break-even.
+
+Only chat ids in `TELEGRAM_CHAT_ID` get a reply; a command from any other chat
+is logged and dropped without a response, since the report discloses balances.
+Delivery is a once-a-minute `getUpdates` poll with a persisted offset (no
+webhook, nothing long-running), so a missed minute self-heals on the next run.
 
 ## What changed from CryptoAutoBot
 
