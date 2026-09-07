@@ -24,15 +24,16 @@ def _load_dotenv(path=ROOT / ".env"):
 
 _load_dotenv()
 
-# Indodax-tradable universe. Every one of these is a live *_idr pair (verified
-# against /api/pairs). Narrowed from CryptoAutoBot's 10 coins to 5 on
-# 2026-09-01 at the user's request.
+# Indodax-tradable universe. Every one of these is a live *_idr pair (all ten
+# re-verified against /api/pairs on 2026-09-06: min order 10.000 IDR, taker fee
+# 0.2%). Narrowed to 5 on 2026-09-01, widened back to 10 on 2026-09-06 at the
+# user's request — SOL, XRP, DOGE, AVAX and LTC rejoin BTC/ETH/UNI/DOT/LINK.
 #
 # BTC must stay on this list whatever else changes: strategy.regime() reads
 # BTC's 1D timeframe to set the risk_on/neutral/risk_off gate for every other
 # coin, and falls back to "neutral" if BTC is absent — which silently raises
 # the ADX entry bar from 25 to 30 across the board.
-WATCHLIST = ["BTC", "ETH", "UNI", "DOT", "LINK"]
+WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI"]
 
 # Everything is quoted in Indonesian Rupiah.
 QUOTE = "IDR"
@@ -95,7 +96,7 @@ FORCE_IPV4 = os.getenv("INDODAX_FORCE_IPV4", "true").lower() == "true"
 # `python -m cryptoindodax.trader --dry-run` to preview decisions safely.
 TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
 
-MAX_POSITIONS = 3
+MAX_POSITIONS = 4          # hard cap; the daily policy may lower it, never raise it
 RISK_PCT = 0.015            # equity fraction risked per trade
 STOP_ATR_MULT = 3.0         # initial stop distance = 1R
 TRAIL_ATR_MULT = 6.0        # trail distance once >= +1R

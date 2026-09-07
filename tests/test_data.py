@@ -124,8 +124,21 @@ def test_pair_helpers_use_idr_forms():
     assert config.pair_id("BTC") == "btc_idr"
 
 
-def test_watchlist_is_the_five_selected_coins():
-    assert config.WATCHLIST == ["BTC", "ETH", "UNI", "DOT", "LINK"]
+def test_watchlist_is_the_ten_selected_coins():
+    assert config.WATCHLIST == ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX",
+                                "LINK", "DOT", "LTC", "UNI"]
+
+
+def test_watchlist_entries_are_live_indodax_idr_pairs():
+    """Every watchlist symbol must resolve to a pair id that exists in the
+    cached /api/pairs metadata — a symbol Indodax does not list would pass
+    every filter and then fail at order time."""
+    from cryptoindodax import pairs as pairs_mod
+    known = pairs_mod.load() or {}
+    if not known:  # no cache in this environment; nothing to assert against
+        return
+    missing = [s for s in config.WATCHLIST if config.pair_id(s) not in known]
+    assert not missing, f"not listed on Indodax: {missing}"
 
 
 def test_watchlist_contains_btc_for_the_regime_gate():

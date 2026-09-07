@@ -136,9 +136,14 @@ def test_get_positions_counts_locked_qty(creds, monkeypatch):
 
 
 def test_get_positions_ignores_coin_outside_watchlist(creds, monkeypatch):
-    """A balance in a coin the bot does not track is not a position."""
-    pos = broker.get_positions(price_by_symbol={"SOL": 1_800_000},
-                               balances={"SOL": {"free": 5.0, "locked": 0.0}})
+    """A balance in a coin the bot does not track is not a position.
+
+    The untracked symbol is derived from the watchlist rather than hardcoded —
+    this test previously used SOL, which broke the day SOL was added back."""
+    off = next(s for s in ("SHIB", "TRX", "ADA", "BNB")
+               if s not in broker.config.WATCHLIST)
+    pos = broker.get_positions(price_by_symbol={off: 1_800_000},
+                               balances={off: {"free": 5.0, "locked": 0.0}})
     assert pos == []
 
 
