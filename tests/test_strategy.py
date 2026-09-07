@@ -1,4 +1,4 @@
-from cryptoindodax import strategy
+from cryptoindodax import config, strategy
 
 
 def _tf(ema8=110, ema20=105, ema55=100, rsi=55, adx=30, atr=2.0, close=112):
@@ -59,14 +59,41 @@ def test_entry_passes_clean_setup():
     assert ok, reason
 
 
+def test_entry_rejects_atr_below_the_fee_drag_floor():
+    """BTC-shaped setup: perfect trend, ATR too small to pay the round trip."""
+    coin = _coin(h1=_tf(atr=0.5, close=112))          # ATR 0.45% < 0.75% floor
+    ok, reason = strategy.evaluate_entry(coin, _extras(), "risk_on")
+    assert not ok
+    assert "fee drag" in reason and "ATR" in reason
+
+
+def test_entry_allows_atr_above_the_floor():
+    coin = _coin(h1=_tf(atr=1.0, close=112))          # ATR 0.89% > 0.75% floor
+    assert strategy.evaluate_entry(coin, _extras(), "risk_on")[0]
+
+
+def test_atr_floor_is_derived_from_the_fee_drag_cap():
+    """MIN_ATR_PCT is not a magic number — it is the ATR at which a round trip
+    costs exactly MAX_FEE_DRAG_R of 1R, so changing the fee or the cap moves it."""
+    implied = (config.OBSERVED_ROUND_TRIP_PCT
+               / (config.STOP_ATR_MULT * config.MIN_ATR_PCT))
+    assert abs(implied - config.MAX_FEE_DRAG_R) < 1e-9
+
+
+def test_atr_floor_is_reported_before_adx():
+    """A coin failing both should name the economic reason, not a downstream one."""
+    coin = _coin(h1=_tf(atr=0.5, close=112, adx=5))
+    assert "fee drag" in strategy.evaluate_entry(coin, _extras(), "risk_on")[1]
+
+
 def test_entry_rejects_low_adx():
-    coin = _coin(h1=_tf(adx=20))
+    coin = _coin(h1=_tf(adx=18))
     ok, reason = strategy.evaluate_entry(coin, _extras(), "risk_on")
     assert not ok and "ADX" in reason
 
 
 def test_entry_needs_higher_adx_when_not_risk_on():
-    coin = _coin(h1=_tf(adx=27))
+    coin = _coin(h1=_tf(adx=22))
     assert strategy.evaluate_entry(coin, _extras(), "risk_on")[0]
     assert not strategy.evaluate_entry(coin, _extras(), "neutral")[0]
 
@@ -166,16 +193,24 @@ def test_exit_time_stop():
 
 
 def test_exit_trail_activates_after_1r():
-    # +1R = 106; close 108 with atr 0.5 → trail = 108 - 6*0.5 = 105 > 94
+    # +1R = 106; close 108 with atr 0.5 → trail = 108 - TRAIL_ATR_MULT*0.5 > 94
     action, pos = strategy.check_exit(_pos(), _tf(close=108.0, atr=0.5), "risk_on", 5)
     assert action is None
-    assert pos["stop"] == 108.0 - 6 * 0.5
+    assert pos["stop"] == 108.0 - config.TRAIL_ATR_MULT * 0.5
     assert pos["high_water"] == 108.0
 
 
 def test_exit_trail_tighter_in_risk_off():
     action, pos = strategy.check_exit(_pos(), _tf(close=108.0, atr=0.5), "risk_off", 5)
-    assert pos["stop"] == 108.0 - 3 * 0.5
+    assert pos["stop"] == 108.0 - config.RISK_OFF_TRAIL_ATR_MULT * 0.5
+
+
+def test_trail_is_tighter_than_the_stop():
+    """A trail wider than the stop can never protect anything: it only overtakes
+    the initial stop after price has already run STOP_ATR_MULT*ATR past entry,
+    and an expanding ATR pushes it back below. TRAIL must stay inside STOP."""
+    assert config.TRAIL_ATR_MULT < config.STOP_ATR_MULT
+    assert config.RISK_OFF_TRAIL_ATR_MULT < config.TRAIL_ATR_MULT
 
 
 def test_exit_trail_never_lowers_stop():

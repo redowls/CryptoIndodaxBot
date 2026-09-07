@@ -58,6 +58,17 @@ def evaluate_entry(coin, extras, reg):
     adx, rsi = h1.get("adx14"), h1.get("rsi14")
     if adx is None or rsi is None:
         return False, "indicators not warm"
+    # Volatility floor first: a coin whose 1H ATR cannot pay the round trip is
+    # uneconomic no matter how clean its trend looks, and reporting the fee drag
+    # rather than a downstream ADX miss is what makes that visible in the log.
+    atr, close = h1.get("atr14"), h1.get("last_close")
+    if not atr or not close:
+        return False, "no ATR"
+    atr_pct = atr / close * 100.0
+    if atr_pct < config.MIN_ATR_PCT:
+        drag = config.OBSERVED_ROUND_TRIP_PCT / (config.STOP_ATR_MULT * atr_pct)
+        return False, (f"fee drag {drag:.0%} of 1R "
+                       f"(ATR {atr_pct:.2f}% < {config.MIN_ATR_PCT:.2f}%)")
     adx_min = config.ENTRY_ADX_MIN if reg == "risk_on" else config.ENTRY_ADX_MIN_CAUTIOUS
     if adx < adx_min:
         return False, f"ADX {adx:.1f} < {adx_min:.0f}"

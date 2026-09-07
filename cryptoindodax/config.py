@@ -99,8 +99,15 @@ TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
 MAX_POSITIONS = 4          # hard cap; the daily policy may lower it, never raise it
 RISK_PCT = 0.015            # equity fraction risked per trade
 STOP_ATR_MULT = 3.0         # initial stop distance = 1R
-TRAIL_ATR_MULT = 6.0        # trail distance once >= +1R
-RISK_OFF_TRAIL_ATR_MULT = 3.0  # tighter trail while BTC regime is risk_off
+# The trail must be TIGHTER than the stop or it can never protect anything.
+# At the old 6.0 (2x STOP_ATR_MULT) the trail stop only reached entry+0.5R by
+# the time price hit the 2.5R take-profit, so it never bound: DOT ran +9% on
+# 2026-09-06 with its stop pinned at the original 1R the whole way, because a
+# rising ATR pushed `high_water - 6*ATR` back below the initial stop. At 2.0 the
+# trail sits inside the 3.0 stop, locks in ~+1.8R at target, and lets a runner
+# continue past TP instead of being capped by it.
+TRAIL_ATR_MULT = 2.0        # trail distance once >= +1R
+RISK_OFF_TRAIL_ATR_MULT = 1.5  # tighter trail while BTC regime is risk_off
 TP_R = 2.5                  # hard take-profit in R multiples
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries
@@ -123,12 +130,40 @@ TAKER_FEE_PCT = 0.002
 DRY_RUN_EQUITY_IDR = 10_000_000
 
 # entry filter thresholds (distilled from memory/insights.md)
-ENTRY_ADX_MIN = 25.0
-ENTRY_ADX_MIN_CAUTIOUS = 30.0  # when regime is neutral/risk_off
+# Lowered 25 -> 20 on 2026-09-07: ADX was the single largest brake in the live
+# funnel (244 of 720 coin-hours rejected on it). With MIN_ATR_PCT now filtering
+# the uneconomic names, 20 restores candidate flow to ~12.9/day — the same rate
+# as the old unfiltered 25 bar, but on coins that can pay their own fees. The
+# cautious bar keeps its original +5 offset.
+ENTRY_ADX_MIN = 20.0
+ENTRY_ADX_MIN_CAUTIOUS = 25.0  # when regime is neutral/risk_off
 ENTRY_RSI_MIN = 45.0
 ENTRY_RSI_MAX = 70.0
 BLOWOFF_RSI = 80.0
 LATE_ENTRY_DAY_PCT = 5.0    # skip coins already up more than this on the day
+
+# --- volatility floor: refuse trades the fees eat ------------------------
+# Indodax charges ~0.2% a side and real fills have run ~0.63% round trip. Against
+# a STOP_ATR_MULT*ATR stop that cost is a fixed share of 1R, and it is brutal on
+# the low-volatility majors: at a 1H ATR of 0.28% BTC's stop is 0.84% and the
+# round trip is 75% of everything risked. The trade has to be right by a huge
+# margin just to break even.
+#
+# The first four live trades separated perfectly on this axis — BTC (ATR 0.54%)
+# and ETH (0.65%) both stopped out, DOT (0.84%) and LINK (0.92%) both hit take
+# profit — and replaying the two losers against 4x/5x/6x ATR stops showed a wider
+# stop would have avoided both losses while producing zero wins (BTC never got
+# above -0.60R in the 62h after its stop, ETH peaked at +0.11R). The stop width
+# was never the problem; entering those coins at all was.
+#
+# So the veto is economic, not a magic number: cap the round trip at
+# MAX_FEE_DRAG_R of 1R and solve for the ATR that implies. This used to be
+# re-applied by hand in policy.json every night (180 "blocked by policy"
+# rejections in the first week) — making it structural is what frees the daily
+# digest to stop hand-blocking BTC/ETH.
+OBSERVED_ROUND_TRIP_PCT = 0.63   # measured on real fills, not the 0.4% configured
+MAX_FEE_DRAG_R = 0.28            # fees may not exceed 28% of 1R
+MIN_ATR_PCT = OBSERVED_ROUND_TRIP_PCT / MAX_FEE_DRAG_R / STOP_ATR_MULT  # = 0.75%
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
