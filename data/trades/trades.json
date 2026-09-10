@@ -1,30 +1,5 @@
 {
-  "open": [
-    {
-      "symbol": "AVAX",
-      "qty": 0.92722008,
-      "entry_price": 141196.0,
-      "entry_time": "2026-09-08T04:14:29.904476+00:00",
-      "initial_stop": 137660.0979005574,
-      "stop": 137660.0979005574,
-      "high_water": 143510.0,
-      "atr_at_entry": 1178.6340331475349,
-      "order_id": "22442012",
-      "half_size": false
-    },
-    {
-      "symbol": "XRP",
-      "qty": 5.17976949,
-      "entry_price": 25149.0,
-      "entry_time": "2026-09-08T18:14:29.771550+00:00",
-      "initial_stop": 24569.474468423432,
-      "stop": 24569.474468423432,
-      "high_water": 25201.0,
-      "atr_at_entry": 193.17517719218927,
-      "order_id": "211609977",
-      "half_size": false
-    }
-  ],
+  "open": [],
   "closed": [
     {
       "symbol": "BTC",
@@ -104,6 +79,26 @@
       "entry_time": "2026-09-07T04:14:23.312482+00:00",
       "exit_time": "2026-09-08T13:14:05.180390+00:00",
       "pnl": -6257.45,
+      "reason": "stop"
+    },
+    {
+      "symbol": "XRP",
+      "qty": 5.17976949,
+      "entry_price": 25149.0,
+      "exit_price": 24558.0,
+      "entry_time": "2026-09-08T18:14:29.771550+00:00",
+      "exit_time": "2026-09-09T20:14:08.654994+00:00",
+      "pnl": -3061.24,
+      "reason": "stop"
+    },
+    {
+      "symbol": "AVAX",
+      "qty": 0.92722008,
+      "entry_price": 141196.0,
+      "exit_price": 137613.0,
+      "entry_time": "2026-09-08T04:14:29.904476+00:00",
+      "exit_time": "2026-09-09T21:14:04.431333+00:00",
+      "pnl": -3322.23,
       "reason": "stop"
     }
   ],
