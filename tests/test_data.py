@@ -124,9 +124,10 @@ def test_pair_helpers_use_idr_forms():
     assert config.pair_id("BTC") == "btc_idr"
 
 
-def test_watchlist_is_the_twelve_selected_coins():
+def test_watchlist_is_the_fourteen_selected_coins():
     assert config.WATCHLIST == ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX",
-                                "LINK", "DOT", "LTC", "UNI", "PEPE", "FARTCOIN"]
+                                "LINK", "DOT", "LTC", "UNI", "PEPE", "FARTCOIN",
+                                "USELESS", "MOG"]
 
 
 def test_watchlist_entries_are_live_indodax_idr_pairs():

@@ -43,12 +43,36 @@ _load_dotenv()
 # was measured; at 43% of 1R it is as uneconomic as BTC was. All four clear the
 # ATR floor and carry a full 200-day history, so cost was the deciding screen.
 #
+# USELESS and MOG were added 2026-09-15 on the same screen, widened to 19 meme
+# pairs with spreads sampled 8 times over two minutes (a single reading is not
+# trustworthy — WIF ranged 0.85% to 4.43%). They are the ONLY two candidates
+# that come in under MAX_FEE_DRAG_R once the spread is counted:
+#
+#     coin      ATR%    stop   spread   drag of 1R   24h volume
+#     USELESS   4.29%  12.87%   0.41%       8.1%     Rp2.70bn   taken
+#     MOG       2.44%   7.32%   0.68%      17.9%     Rp53m      taken
+#     MOODENG   1.57%   4.71%   0.86%      31.6%     Rp556m     over cap
+#     SPX       1.20%   3.60%   0.56%      33.0%     Rp68m      over cap
+#     PIPPIN    1.15%   3.45%   0.53%      33.6%     Rp1.62bn   over cap
+#     WIF       1.17%   3.50%   3.67%     122.9%     Rp147m     unusable
+#     DOGS      1.21%   3.63%   8.12%     241.3%     Rp9.5m     unusable
+#
+# MOG's 24h turnover looks thin next to PIPPIN's, and that nearly ruled it out.
+# It should not have: the bot exits with MARKET orders, so what matters is the
+# resting book, and MOG holds Rp25.2m of bids within 1% of top — a Rp127k exit
+# is 0.50% of it. Depth, not turnover, is the liquidity question at this size.
+#
+# USELESS carries the widest stop in the book (12.87%), so it is the first coin
+# where the equity/MAX_POSITIONS notional cap does NOT bind and a trade risks
+# the full RISK_PCT. Its spread also spiked to 3.78% in one of the eight
+# samples, so the 8.1% drag is a median, not a guarantee.
+#
 # BTC must stay on this list whatever else changes: strategy.regime() reads
 # BTC's 1D timeframe to set the risk_on/neutral/risk_off gate for every other
 # coin, and falls back to "neutral" if BTC is absent — which silently raises
 # the ADX entry bar across the board.
 WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI",
-             "PEPE", "FARTCOIN"]
+             "PEPE", "FARTCOIN", "USELESS", "MOG"]
 
 # Everything is quoted in Indonesian Rupiah.
 QUOTE = "IDR"
