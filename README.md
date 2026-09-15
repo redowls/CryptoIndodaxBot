@@ -77,6 +77,7 @@ cryptoindodax/
   net.py         pins outbound traffic to IPv4 so the IP whitelist matches
   notify.py      Telegram (outgoing alerts)
   saldo.py       Telegram commands — /saldo account report, cron-polled
+  replay.py      backtest harness — drives the real engines over snapshots
 ```
 
 ## Running
@@ -86,7 +87,10 @@ python -m cryptoindodax.snapshot          # capture one hourly snapshot
 python -m cryptoindodax.digest            # summarise today's snapshots
 python -m cryptoindodax.trader --dry-run  # decide, place nothing
 python -m cryptoindodax.saldo print       # render the /saldo report locally
-python -m pytest tests/ -q                # 144 tests
+python -m cryptoindodax.replay --historical-policy        # backtest
+python -m cryptoindodax.replay --sweep trail              # scan one knob
+python -m cryptoindodax.replay --validate                 # replay vs live
+python -m pytest tests/ -q                # 156 tests
 ```
 
 Installed cron:

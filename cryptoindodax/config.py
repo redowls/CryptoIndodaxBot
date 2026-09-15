@@ -99,15 +99,27 @@ TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
 MAX_POSITIONS = 4          # hard cap; the daily policy may lower it, never raise it
 RISK_PCT = 0.015            # equity fraction risked per trade
 STOP_ATR_MULT = 3.0         # initial stop distance = 1R
-# The trail must be TIGHTER than the stop or it can never protect anything.
-# At the old 6.0 (2x STOP_ATR_MULT) the trail stop only reached entry+0.5R by
-# the time price hit the 2.5R take-profit, so it never bound: DOT ran +9% on
-# 2026-09-06 with its stop pinned at the original 1R the whole way, because a
-# rising ATR pushed `high_water - 6*ATR` back below the initial stop. At 2.0 the
-# trail sits inside the 3.0 stop, locks in ~+1.8R at target, and lets a runner
-# continue past TP instead of being capped by it.
-TRAIL_ATR_MULT = 2.0        # trail distance once >= +1R
-RISK_OFF_TRAIL_ATR_MULT = 1.5  # tighter trail while BTC regime is risk_off
+# REVERTED 2026-09-15 from 2.0 back to 4.0, and the reasoning that produced 2.0
+# is refuted. That change argued a trail wider than the stop "can never protect
+# anything"; true, but irrelevant — TP_R does the exiting here, and a trail
+# tighter than 1R just amputates winners on their way to it.
+#
+# TRAIL_ATR_MULT is measured in ATR while 1R = STOP_ATR_MULT * ATR, so a trail
+# of 2.0 sits only 0.67R below the high water. Any 0.67R pullback exits, and a
+# move heading to +2.5R retraces that routinely. Measured over 335 snapshots
+# with the daily policy overlay replayed from git (cryptoindodax.replay):
+#
+#     trail 1.5  -0.25%   0% true win     trail 4.0  +2.67%   40% true win
+#     trail 2.0  +0.41%   9% true win     trail 6.0  +2.67%   40% true win
+#     trail 3.0  +2.67%  40% true win     trail 8.0  +2.67%   40% true win
+#
+# Everything from 3.0 up is identical because the trail simply never binds
+# before TP; everything at or below 2.0 collapses. That is a plateau with a
+# cliff, not a peak, so 4.0 sits mid-plateau rather than on the 3.0 edge.
+# RISK_OFF stays below the normal trail to keep its tighten-in-a-downtrend
+# purpose, though no risk_off trade exists yet to test it on.
+TRAIL_ATR_MULT = 4.0        # trail distance once >= +1R
+RISK_OFF_TRAIL_ATR_MULT = 3.0  # tighter trail while BTC regime is risk_off
 TP_R = 2.5                  # hard take-profit in R multiples
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries

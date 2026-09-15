@@ -205,12 +205,16 @@ def test_exit_trail_tighter_in_risk_off():
     assert pos["stop"] == 108.0 - config.RISK_OFF_TRAIL_ATR_MULT * 0.5
 
 
-def test_trail_is_tighter_than_the_stop():
-    """A trail wider than the stop can never protect anything: it only overtakes
-    the initial stop after price has already run STOP_ATR_MULT*ATR past entry,
-    and an expanding ATR pushes it back below. TRAIL must stay inside STOP."""
-    assert config.TRAIL_ATR_MULT < config.STOP_ATR_MULT
-    assert config.RISK_OFF_TRAIL_ATR_MULT < config.TRAIL_ATR_MULT
+def test_trail_is_not_tighter_than_1r():
+    """The inverse of what this test asserted until 2026-09-15.
+
+    It used to require TRAIL < STOP on the theory that a wider trail can never
+    bind. It cannot — but TP_R is what exits a winner here, and a trail tighter
+    than 1R (TRAIL_ATR_MULT < STOP_ATR_MULT) exits on any 1R-sized pullback,
+    amputating moves on their way to +2.5R. Replaying 335 snapshots put trail
+    2.0 at +0.41% and everything from 3.0 up at +2.67%, so the floor is 1R."""
+    assert config.TRAIL_ATR_MULT >= config.STOP_ATR_MULT
+    assert config.RISK_OFF_TRAIL_ATR_MULT <= config.TRAIL_ATR_MULT
 
 
 def test_exit_trail_never_lowers_stop():
