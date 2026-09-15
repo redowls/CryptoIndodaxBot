@@ -24,16 +24,31 @@ def _load_dotenv(path=ROOT / ".env"):
 
 _load_dotenv()
 
-# Indodax-tradable universe. Every one of these is a live *_idr pair (all ten
-# re-verified against /api/pairs on 2026-09-06: min order 10.000 IDR, taker fee
-# 0.2%). Narrowed to 5 on 2026-09-01, widened back to 10 on 2026-09-06 at the
-# user's request — SOL, XRP, DOGE, AVAX and LTC rejoin BTC/ETH/UNI/DOT/LINK.
+# Indodax-tradable universe. Every one is a live *_idr pair with a 10.000 IDR
+# minimum and a 0.2% taker fee. 5 coins on 2026-09-01, 10 on 2026-09-06, and 12
+# on 2026-09-15 when the user asked for meme-coin exposure.
+#
+# PEPE and FARTCOIN were picked over the other memes Indodax lists on total
+# round-trip cost, not on volume alone. Bid/ask spread is an invisible fee the
+# MIN_ATR_PCT floor does not see (that floor only knows OBSERVED_ROUND_TRIP_PCT),
+# and on thin meme books it dwarfs the commission:
+#
+#     coin      spread   fee+spread   vs a 3*ATR stop     verdict
+#     PEPE       0.19%      0.82%          29% of 1R      taken
+#     FARTCOIN   0.32%      0.95%          27% of 1R      taken
+#     SHIB       0.48%      1.11%          43% of 1R      rejected
+#     PENGU      0.58%      1.21%          42% of 1R      rejected
+#
+# SHIB is the more established name and was the obvious pick until the spread
+# was measured; at 43% of 1R it is as uneconomic as BTC was. All four clear the
+# ATR floor and carry a full 200-day history, so cost was the deciding screen.
 #
 # BTC must stay on this list whatever else changes: strategy.regime() reads
 # BTC's 1D timeframe to set the risk_on/neutral/risk_off gate for every other
 # coin, and falls back to "neutral" if BTC is absent — which silently raises
-# the ADX entry bar from 25 to 30 across the board.
-WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI"]
+# the ADX entry bar across the board.
+WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI",
+             "PEPE", "FARTCOIN"]
 
 # Everything is quoted in Indonesian Rupiah.
 QUOTE = "IDR"
