@@ -49,7 +49,7 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
-from . import config, ledger, risk, strategy
+from . import config, ledger, regime_lab, risk, strategy
 
 
 # --- history --------------------------------------------------------------
@@ -163,7 +163,8 @@ def overrides(**kwargs):
 # --- the simulation -------------------------------------------------------
 
 def run(history=None, start_equity=500_861.0, fee_pct=None, blocked=(),
-        regime_hint="auto", max_positions=None, use_policy_history=False):
+        regime_hint="auto", max_positions=None, use_policy_history=False,
+        regime_fn=None):
     """Replay every hourly snapshot. Returns a result dict."""
     history = history if history is not None else load_history()
     if not history:
@@ -173,6 +174,10 @@ def run(history=None, start_equity=500_861.0, fee_pct=None, blocked=(),
     extras_by_index = build_extras(history)
     cap = min(max_positions or config.MAX_POSITIONS, config.MAX_POSITIONS)
     pol_history = load_policy_history() if use_policy_history else []
+    # Swap the regime gate without touching strategy.py — see regime_lab. A
+    # stateful variant must be a fresh instance per run or hysteresis leaks
+    # between scenarios.
+    gate = regime_fn or strategy.regime
 
     led = {"open": [], "closed": [], "last_entry_attempt": {}}
     cash = start_equity
@@ -191,7 +196,7 @@ def run(history=None, start_equity=500_861.0, fee_pct=None, blocked=(),
             cap_now = min(pol.get("max_positions") or cap, config.MAX_POSITIONS)
         else:
             hint, blocked_now, cap_now = regime_hint, set(blocked), cap
-        reg = strategy.effective_regime(strategy.regime(snap), hint)
+        reg = strategy.effective_regime(gate(snap), hint)
 
         # --- exits (same order as trader.run) ---
         for pos in list(led["open"]):
@@ -326,11 +331,16 @@ def main(argv=None):
     p.add_argument("--historical-policy", action="store_true",
                    help="apply the daily overlay as it actually stood (from git)")
     p.add_argument("--from", dest="start", help="only replay snapshots from this ISO date")
+    p.add_argument("--regimes", action="store_true",
+                   help="score every experimental regime gate on the bull window, "
+                        "the bear window and the whole history")
     p.add_argument("--validate", action="store_true",
                    help="replay 2026-09-07T17:00 onward with the historical policy and "
                         "compare entries against the live ledger")
     args = p.parse_args(argv)
 
+    if args.regimes:
+        return _regime_lab(args)
     if args.validate:
         return _validate()
 
@@ -385,6 +395,47 @@ def main(argv=None):
 
     print("\nCAVEAT: hourly closes only, no intrabar; snapshots start 2026-09-01 and "
           "carried 5 of 10 coins before 09-07. Treat as directional, not proof.")
+    return 0
+
+
+# The bull window ran to the 09-07 peak (equity Rp531.150); everything after is
+# the decline. Splitting there is what exposes a gate that only works on one.
+REGIME_SPLIT = "2026-09-07T17:00:00+00:00"
+
+
+def _regime_lab(args):
+    """Score each experimental gate on bull, bear and full windows."""
+    history = load_history()
+    if not history:
+        print("no snapshots to replay")
+        return 1
+    split = datetime.fromisoformat(REGIME_SPLIT)
+    windows = [("BULL  01-07", [h for h in history if h[0] < split]),
+               ("BEAR  07-16", [h for h in history if h[0] >= split]),
+               ("FULL  01-16", history)]
+    ov = {k: v for k, v in (("TRAIL_ATR_MULT", args.trail), ("TP_R", args.tp),
+                            ("STOP_ATR_MULT", args.stop), ("ENTRY_ADX_MIN", args.adx),
+                            ("MIN_ATR_PCT", args.atr_floor)) if v is not None}
+    print("REGIME GATE VARIANTS — scored on each window separately.\n"
+          "A gate that only wins on BEAR is fitted to the decline, not better.\n")
+    for label, hist in windows:
+        if not hist:
+            continue
+        print(f"=== {label} ({len(hist)} snapshots) ===")
+        print(f"{'gate':<34}{'n':>4}{'net IDR':>11}{'return':>9}{'trueWin':>9}{'stop%':>8}{'maxDD':>9}")
+        print("-" * 84)
+        for variant in regime_lab.variants():
+            with overrides(**ov):
+                res = run(hist, use_policy_history=args.historical_policy,
+                          regime_fn=variant)
+                st = summarize(res)
+            tag = "  <- live" if isinstance(variant, regime_lab.Current) else ""
+            print(f"{variant.name:<34}{st['trades']:>4}{st['net_idr']:>11,.0f}"
+                  f"{st['return_pct']:>8.2f}%{st['true_win_pct']:>8.1f}%"
+                  f"{st['stop_pct']:>7.1f}%{st['max_dd_pct']:>8.2f}%{tag}")
+        print()
+    print("CAVEAT: one bull run and one decline, 16 days, low double-digit trade\n"
+          "counts per cell. This ranks hypotheses; it does not confirm any of them.")
     return 0
 
 
