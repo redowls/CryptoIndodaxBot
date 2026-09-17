@@ -78,6 +78,8 @@ cryptoindodax/
   notify.py      Telegram (outgoing alerts)
   saldo.py       Telegram commands — /saldo account report, cron-polled
   replay.py      backtest harness — drives the real engines over snapshots
+  scorecard.py   pre-registered live decision criterion (see below)
+  regime_lab.py  experimental regime gates, harness-only
 ```
 
 ## Running
@@ -90,7 +92,9 @@ python -m cryptoindodax.saldo print       # render the /saldo report locally
 python -m cryptoindodax.replay --historical-policy        # backtest
 python -m cryptoindodax.replay --sweep trail              # scan one knob
 python -m cryptoindodax.replay --validate                 # replay vs live
-python -m pytest tests/ -q                # 156 tests
+python -m cryptoindodax.replay --regimes                  # score regime variants
+python -m cryptoindodax.scorecard                         # live decision scorecard
+python -m pytest tests/ -q                # 191 tests
 ```
 
 Installed cron:
@@ -198,3 +202,20 @@ a stale or malformed file degrades to pure deterministic mode.
 `memory/insights.md` is seeded from CryptoAutoBot's 27+ days of observations —
 those describe coin behaviour, which is the same market regardless of quote
 currency.
+
+
+## Pre-registered decision (2026-09-17)
+
+`cryptoindodax/scorecard.py` holds a criterion written BEFORE its evaluation
+window opened, so it cannot be moved afterwards to fit the result: at
+**2026-10-17 and >= 40 closed trades**, whichever comes later, stop live
+trading and return to paper if BOTH the true win rate is under 35% (stops
+count as failures whatever their P&L sign) AND the account trails an
+equal-weight hold of the watchlist. The daily routine prints the verdict and
+is explicitly forbidden from reinterpreting it.
+
+`pnl` in `trades.json` is NET of commissions from 2026-09-17, with
+`pnl_gross` and `fees` alongside. Trades before that date carry modelled fees
+(`fees_estimated: true`) and their recorded entry/exit prices are snapshot 1H
+closes rather than true fills — unrecoverable for old trades, fixed going
+forward. The account balance remains the honest number.

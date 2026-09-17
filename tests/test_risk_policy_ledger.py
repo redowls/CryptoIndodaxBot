@@ -98,13 +98,52 @@ def test_ledger_round_trip(tmp_path):
     assert led2["open"][0]["symbol"] == "SOL"
 
 
-def test_ledger_close_records_pnl(tmp_path):
+def test_ledger_close_records_pnl_net_of_fees(tmp_path):
+    """`pnl` is the headline every consumer reads, so it must be NET.
+
+    It was gross until 2026-09-17, which is how the ledger came to report
+    +Rp22.260 realised on an account that was down Rp7.035."""
     led = ledger.load(tmp_path / "t.json")
     pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW)
     trade = ledger.close_position(led, pos, 110.0, "tp", now=NOW)
-    assert trade["pnl"] == 20.0
+    assert trade["pnl_gross"] == 20.0
+    assert trade["pnl"] < trade["pnl_gross"]
+    assert trade["pnl"] == round(trade["pnl_gross"] - trade["fees"], 2)
+    assert trade["fees"] > 0 and trade["fees_estimated"] is True
     assert led["open"] == []
     assert led["closed"][0]["reason"] == "tp"
+
+
+def test_ledger_uses_real_commissions_when_given(tmp_path):
+    led = ledger.load(tmp_path / "t.json")
+    pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW, entry_fee=7.0)
+    trade = ledger.close_position(led, pos, 110.0, "tp", now=NOW, exit_fee=9.0)
+    assert trade["fees"] == 16.0
+    assert trade["pnl"] == 4.0
+    assert trade["fees_estimated"] is False
+
+
+def test_ledger_flags_a_half_measured_fee_as_estimated(tmp_path):
+    """One real side and one modelled side is still an estimate."""
+    led = ledger.load(tmp_path / "t.json")
+    pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW, entry_fee=7.0)
+    trade = ledger.close_position(led, pos, 110.0, "tp", now=NOW)
+    assert trade["fees_estimated"] is True
+
+
+def test_ledger_keeps_the_order_id_on_the_closed_trade(tmp_path):
+    """Without it a closed trade cannot be reconciled against exchange fills."""
+    led = ledger.load(tmp_path / "t.json")
+    pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW)
+    assert ledger.close_position(led, pos, 110.0, "tp", now=NOW)["order_id"] == "oid1"
+
+
+def test_circuit_breaker_sees_net_losses(tmp_path):
+    """The breaker sums `pnl`; now that it is net, fees count toward the halt."""
+    led = ledger.load(tmp_path / "t.json")
+    pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW)
+    trade = ledger.close_position(led, pos, 100.0, "stop", now=NOW)
+    assert trade["pnl"] < 0, "a flat round trip is a loss once fees are counted"
 
 
 def test_ledger_throttle(tmp_path):

@@ -118,9 +118,16 @@ def _exit_position(led, pos, price_hint, reason, dry_run, positions_by_sym):
         log(f"exit {sym}: sell FAILED ({e}) — keeping position, will retry next cycle")
         notify.send(f"CryptoIndodaxBot EXIT FAILED {sym} ({reason}): {e}")
         return None
-    trade = ledger.close_position(led, pos, exit_price, reason)
+    # Real commission if the exchange will tell us; ledger falls back to a
+    # modelled taker fee and flags the trade as estimated when it will not.
+    fill = broker.fill_summary(sym, order_id)
+    if fill["price"]:
+        exit_price = fill["price"]
+    trade = ledger.close_position(led, pos, exit_price, reason,
+                                  exit_fee=fill["commission"] if fill["fills"] else None)
     notify.send(f"CryptoIndodaxBot EXIT {sym} ({reason}) @ {config.fmt_idr(exit_price)} "
-                f"P&L {config.fmt_idr(trade['pnl'])}")
+                f"P&L {config.fmt_idr(trade['pnl'])} net "
+                f"(fees {config.fmt_idr(trade['fees'])})")
     return trade
 
 
@@ -150,9 +157,11 @@ def _enter_position(led, sym, coin, equity, reg, dry_run):
     if status == "canceled" or not filled_qty:
         log(f"entry {sym}: order {status} unfilled — skipped")
         return None
-    entry_price = fill_price or price
+    fill = broker.fill_summary(sym, order_id)
+    entry_price = fill["price"] or fill_price or price
     pos = ledger.open_position(led, sym, filled_qty, entry_price, atr, order_id,
-                               half_size=(reg == "risk_off"))
+                               half_size=(reg == "risk_off"),
+                               entry_fee=fill["commission"] if fill["fills"] else None)
     log(f"entry {sym}: {status} qty {filled_qty} @ {config.fmt_idr(entry_price)}, "
         f"stop {config.fmt_idr(pos['stop'])}")
     notify.send(f"CryptoIndodaxBot ENTRY {sym} qty {filled_qty} @ {config.fmt_idr(entry_price)} "

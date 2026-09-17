@@ -176,14 +176,66 @@ def test_wait_for_fill_reports_partial_after_cancel(creds, monkeypatch):
 
 def test_avg_fill_price_is_quantity_weighted(creds, monkeypatch):
     _capture(monkeypatch, {"data": [
-        {"qty": "1.0", "price": "100"},
-        {"qty": "3.0", "price": "200"}]})
+        {"orderId": "dotidr-market-o1", "qty": "1.0", "price": "100"},
+        {"orderId": "dotidr-market-o1", "qty": "3.0", "price": "200"}]})
     assert broker.avg_fill_price("DOT", "o1") == pytest.approx(175.0)
 
 
 def test_avg_fill_price_none_when_no_fills(creds, monkeypatch):
     _capture(monkeypatch, {"data": []})
     assert broker.avg_fill_price("DOT", "o1") is None
+
+
+def _params(seen):
+    """Query params from the captured request URL."""
+    from urllib.parse import urlparse, parse_qs
+    return {k: v[0] for k, v in parse_qs(urlparse(seen["url"]).query).items()}
+
+
+def test_fill_summary_matches_the_prefixed_order_id(creds, monkeypatch):
+    """Placing an order returns "60418781"; myTrades reports
+    "uniidr-market-60418781". Matching on the suffix is the whole fix."""
+    _capture(monkeypatch, {"data": [
+        {"orderId": "uniidr-market-60418781", "qty": "0.37178556",
+         "price": "121172", "commission": "95", "commissionAsset": "idr"}]})
+    out = broker.fill_summary("UNI", "60418781")
+    assert out["price"] == pytest.approx(121172.0)
+    assert out["commission"] == 95.0 and out["fills"] == 1
+
+
+def test_fill_summary_ignores_other_orders_on_the_same_pair(creds, monkeypatch):
+    _capture(monkeypatch, {"data": [
+        {"orderId": "uniidr-market-111", "qty": "1", "price": "100",
+         "commission": "1", "commissionAsset": "idr"},
+        {"orderId": "uniidr-market-222", "qty": "1", "price": "900",
+         "commission": "9", "commissionAsset": "idr"}]})
+    out = broker.fill_summary("UNI", "222")
+    assert out["price"] == 900.0 and out["commission"] == 9.0 and out["fills"] == 1
+
+
+def test_fill_summary_sends_parameters_indodax_accepts(creds, monkeypatch):
+    """Every one of these was wrong before and returned [1109] or nothing:
+    limit must be 10..1000, symbol must be uppercase, and orderId is not a
+    supported filter at all."""
+    seen = _capture(monkeypatch, {"data": []})
+    broker.fill_summary("UNI", "1", limit=1)
+    params = _params(seen)
+    assert 10 <= int(params["limit"]) <= 1000
+    assert params["symbol"] == "UNIIDR"
+    assert "orderId" not in params
+
+
+def test_fill_summary_separates_a_fee_charged_in_coin(creds, monkeypatch):
+    """A non-IDR commission must not be added to a rupiah total."""
+    _capture(monkeypatch, {"data": [{"orderId": "uniidr-market-1", "qty": "2",
+                                     "price": "100", "commission": "0.5",
+                                     "commissionAsset": "uni"}]})
+    out = broker.fill_summary("UNI", "1")
+    assert out["commission"] == 0.0 and out["commission_in_coin"] == 0.5
+
+
+def test_fill_summary_without_an_order_id_returns_empty(creds):
+    assert broker.fill_summary("UNI", None)["price"] is None
 
 
 # --- trader helpers -------------------------------------------------------

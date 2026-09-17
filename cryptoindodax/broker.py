@@ -206,26 +206,72 @@ def get_order(symbol, order_id, session=None):
     return {"status": status.lower(), "filled_avg_price": price, "filled_qty": filled_qty}
 
 
-def avg_fill_price(symbol, order_id, session=None):
-    """Quantity-weighted average price across an order's fills, or None."""
+def fill_summary(symbol, order_id, limit=100, session=None):
+    """Real fill data for one order: {price, qty, commission, fills}.
+
+    Two things about /api/v2/myTrades cost this bot a fortnight of wrong numbers:
+
+      * It does NOT accept `orderId` as a filter. Passing one returns
+        `[1109] Invalid parameter value. Invalid parameter 'orderId', invalid
+        orderId format` — and the old code swallowed that as "no fills", so
+        every recorded price silently fell back to the snapshot 1H close.
+      * The ids do not match either. Placing an order returns a bare number
+        ("60418781") while myTrades reports the full form
+        ("uniidr-market-60418781"), so even a permitted filter would have
+        missed. Matching is therefore done here, on the suffix.
+
+    `symbol` must be UPPERCASE (btcidr is rejected) and `limit` must be between
+    10 and 1000. Commission comes back per fill in `commissionAsset` units —
+    only the IDR side is counted, since that is what the ledger is denominated
+    in; a fee charged in coin is reported separately so it is never silently
+    dropped.
+    """
+    empty = {"price": None, "qty": 0.0, "commission": 0.0, "fills": 0,
+             "commission_in_coin": 0.0}
+    if not order_id:
+        return empty
     try:
         body = _request("GET", "/api/v2/myTrades",
-                        {"symbol": config.pair(symbol).lower(), "orderId": str(order_id)},
+                        {"symbol": config.pair(symbol), "limit": str(max(10, min(int(limit), 1000)))},
                         session)
     except BrokerError:
-        return None
-    fills = body.get("data") if isinstance(body, dict) else body
-    total_qty = total_quote = 0.0
-    for f in fills or []:
+        return empty
+    fills = (body.get("data") if isinstance(body, dict) else body) or []
+    wanted = str(order_id)
+    total_qty = total_quote = fee_idr = fee_coin = 0.0
+    matched = 0
+    for f in fills:
+        oid = str(f.get("orderId") or "")
+        cid = str(f.get("clientOrderId") or "")
+        if wanted not in (oid, cid) and not oid.endswith(wanted) and not cid.endswith(wanted):
+            continue
         try:
             qty = float(f.get("qty") or 0.0)
             price = float(f.get("price") or 0.0)
         except (TypeError, ValueError):
             continue
-        if qty > 0 and price > 0:
-            total_qty += qty
-            total_quote += qty * price
-    return (total_quote / total_qty) if total_qty > 0 else None
+        if qty <= 0 or price <= 0:
+            continue
+        matched += 1
+        total_qty += qty
+        total_quote += qty * price
+        try:
+            fee = float(f.get("commission") or 0.0)
+        except (TypeError, ValueError):
+            fee = 0.0
+        if str(f.get("commissionAsset") or "").lower() in ("idr", ""):
+            fee_idr += fee
+        else:
+            fee_coin += fee
+    if total_qty <= 0:
+        return empty
+    return {"price": total_quote / total_qty, "qty": total_qty,
+            "commission": fee_idr, "fills": matched, "commission_in_coin": fee_coin}
+
+
+def avg_fill_price(symbol, order_id, session=None):
+    """Quantity-weighted average price across an order's fills, or None."""
+    return fill_summary(symbol, order_id, session=session)["price"]
 
 
 def cancel_order(symbol, order_id, session=None):

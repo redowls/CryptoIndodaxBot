@@ -9,7 +9,7 @@ stop). It also holds closed-trade history and the per-coin re-entry throttle.
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import config
+from . import config, pairs
 
 EMPTY = {"open": [], "closed": [], "last_entry_attempt": {}}
 
@@ -31,9 +31,16 @@ def save(led, path=None):
     path.write_text(json.dumps(led, indent=2))
 
 
-def open_position(led, symbol, qty, entry_price, atr, order_id, half_size=False, now=None):
+def _modelled_fee(symbol, notional):
+    """Fee to assume when the exchange did not report one for this fill."""
+    return abs(float(notional)) * pairs.taker_fee_pct(symbol)
+
+
+def open_position(led, symbol, qty, entry_price, atr, order_id, half_size=False, now=None,
+                  entry_fee=None):
     now = now or datetime.now(timezone.utc)
     stop = entry_price - config.STOP_ATR_MULT * atr
+    fee = _modelled_fee(symbol, qty * entry_price) if entry_fee is None else float(entry_fee)
     pos = {
         "symbol": symbol,
         "qty": qty,
@@ -45,22 +52,46 @@ def open_position(led, symbol, qty, entry_price, atr, order_id, half_size=False,
         "atr_at_entry": atr,
         "order_id": order_id,
         "half_size": half_size,
+        "entry_fee": round(fee, 2),
+        "entry_fee_estimated": entry_fee is None,
     }
     led["open"].append(pos)
     return pos
 
 
-def close_position(led, pos, exit_price, reason, now=None):
+def close_position(led, pos, exit_price, reason, now=None, exit_fee=None):
+    """Book a closed trade with `pnl` NET of both commissions.
+
+    `pnl` used to be gross — `(exit - entry) * qty` with no fee term anywhere —
+    which is how the ledger came to claim +Rp22.260 realised on an account that
+    was down Rp7.035. Every consumer reads `pnl` (the digest, the circuit
+    breaker, the daily routine that writes policy.json), so the headline field
+    is the one that has to be honest; the gross figure stays alongside it rather
+    than disappearing.
+
+    Fees are the real commissions the exchange reported when the trader could
+    fetch them, and a modelled taker fee otherwise. `fees_estimated` says which,
+    so a backfilled or degraded number is never mistaken for a measured one.
+    """
     now = now or datetime.now(timezone.utc)
     led["open"] = [p for p in led["open"] if p is not pos and p["symbol"] != pos["symbol"]]
+    qty = pos["qty"]
+    entry_fee = float(pos.get("entry_fee") or _modelled_fee(pos["symbol"], qty * pos["entry_price"]))
+    x_fee = _modelled_fee(pos["symbol"], qty * exit_price) if exit_fee is None else float(exit_fee)
+    gross = (exit_price - pos["entry_price"]) * qty
+    fees = entry_fee + x_fee
     trade = {
         "symbol": pos["symbol"],
-        "qty": pos["qty"],
+        "qty": qty,
         "entry_price": pos["entry_price"],
         "exit_price": exit_price,
         "entry_time": pos["entry_time"],
         "exit_time": now.isoformat(),
-        "pnl": round((exit_price - pos["entry_price"]) * pos["qty"], 2),
+        "pnl": round(gross - fees, 2),
+        "pnl_gross": round(gross, 2),
+        "fees": round(fees, 2),
+        "fees_estimated": bool(pos.get("entry_fee_estimated", True)) or exit_fee is None,
+        "order_id": pos.get("order_id"),
         "reason": reason,
     }
     led["closed"].append(trade)
