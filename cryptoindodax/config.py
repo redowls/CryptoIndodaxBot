@@ -160,6 +160,50 @@ STOP_ATR_MULT = 3.0         # initial stop distance = 1R
 TRAIL_ATR_MULT = 4.0        # trail distance once >= +1R
 RISK_OFF_TRAIL_ATR_MULT = 3.0  # tighter trail while BTC regime is risk_off
 TP_R = 2.5                  # hard take-profit in R multiples
+
+# --- profit-lock ladder: the take-profit side of the trail ----------------
+# Added 2026-09-18 after UNI: filled 121.172 on 09-17 02:14 UTC, peaked
+# +12.24% (+1.53R) at 22:07, and one -7.6% hour later left on the 3xATR
+# risk_off trail at +3.94% — then bounced to +15% within two hours. TP_R=2.5
+# needs 7.5 ATR from entry (+20% on UNI at that day's ATR) so it never came
+# into play; the only exits available were the trail, sitting 8% under the
+# peak, and the stop.
+#
+# Rungs are (activate at +R of PEAK gain, trail distance in current ATR).
+# Once the high-water mark has reached a rung, a lock level is kept at
+# high_water - trail*ATR and only ever ratchets up. A 1H close at or under it
+# exits with reason "lock". The initial stop, the +1R trail and TP_R are all
+# untouched; a rung can only tighten, never loosen.
+#
+# Activation is in R (like TP_R) and distance in ATR (like the trail) so one
+# rule scales to every coin: 1 ATR is ~0.5% on BTC and ~4% on USELESS. A flat
+# "2% giveback" would be a single ordinary bar on a meme coin and four bars
+# on BTC — replay --ladder scores the flat version beside this one for
+# comparison, and it is not what ships.
+#
+# No rung activates below +1.5R by design. The refuted 2026-09-07 trail
+# (2 ATR from +1R) lives below that line, and so does everything the doctrine
+# scores as SCRATCH: a lock exit under +1R is not a win (see scorecard.py),
+# so there is no point arming one that can only deliver that.
+#
+# WHAT THE HARNESS SAID (replay --ladder, 2026-09-18, 403 snapshots), kept here
+# so nobody has to rediscover it: this is a variance trade, not an edge.
+#   historical policy, FULL:  live +2.65% / true win 33%  ->  +0.82% / 38%
+#     it changed exactly two trades, both +2.5R take-profits cut to locks at
+#     +1.34R (UNI 09-12) and +1.19R (DOT 09-17), about Rp10k between them
+#   pure engine, FULL (19 tr): +8.91% / 39%  ->  +6.95% / 47%,  PF 1.50 -> 1.56
+#   pure engine, BULL:         +7.82% -> +8.44%, maxDD 4.2% -> 2.5%  (helps)
+#   pure engine, BEAR:         +0.56% -> -1.93%
+# The live UNI trade it was built for is in neither path. The pure engine
+# entered UNI two hours earlier on the normal 4xATR trail, HELD through the
+# 23:07 dip and was still open at +2.24R when the history ends; live left at
+# +0.49R because the policy hint had the regime at risk_off, which uses the
+# 3xATR trail. A lock would have cut that pure-path trade at +1.49R as well.
+# The pre-declared rule in replay.py would not ship this. It ships on the
+# user's explicit instruction of 2026-09-18 — a preference for smaller, more
+# frequent wins over the occasional full +2.5R — not on evidence.
+# To turn it off: PROFIT_LOCK_RUNGS = ()
+PROFIT_LOCK_RUNGS = ((1.5, 1.0),)
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries
 REENTRY_THROTTLE_HOURS = 24

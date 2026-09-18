@@ -20,6 +20,15 @@ if the payoff is large enough, and trailing a raging bull market while barely
 invested proves little. Both together say the strategy is neither picking
 winners nor paying for its own costs.
 
+AMENDMENT 2026-09-18 — written before any such exit existed
+
+The profit-lock ladder (config.PROFIT_LOCK_RUNGS) added a new exit reason,
+"lock". It is scored by the doctrine's own bucket rule, not by its name:
+a lock exit is a WIN only when its r_multiple is at least LOCK_WIN_R (+1.0R);
+below that it is a failed trade exactly like a stop. The tp-only figure is
+still printed beside it so the original definition never disappears. The
+decision constants did not move.
+
 WHAT THIS DELIBERATELY DOES NOT DO
 
 It does not suggest a fix, and it does not tune anything. If the criterion
@@ -35,6 +44,7 @@ from . import config
 DECISION_DATE = "2026-10-17"
 MIN_TRADES = 40
 TRUE_WIN_FLOOR = 35.0
+LOCK_WIN_R = 1.0            # a "lock" exit is a win only at or above this R
 START_EQUITY = 500_861.0
 START_DATE = "2026-09-01"
 
@@ -53,12 +63,15 @@ def metrics(led=None, equity=None, benchmark_pct=None, now=None):
     closed = led.get("closed", [])
     n = len(closed)
     tps = [t for t in closed if t.get("reason") == "tp"]
+    locks = [t for t in closed if t.get("reason") == "lock"]
+    lock_wins = [t for t in locks if (t.get("r_multiple") or 0.0) >= LOCK_WIN_R]
     stops = [t for t in closed if t.get("reason") == "stop"]
     net = sum(t.get("pnl", 0.0) for t in closed)
     gross = sum(t.get("pnl_gross", t.get("pnl", 0.0)) for t in closed)
     fees = sum(t.get("fees", 0.0) for t in closed)
     estimated = sum(1 for t in closed if t.get("fees_estimated"))
-    true_win = (len(tps) / n * 100) if n else 0.0
+    true_win = ((len(tps) + len(lock_wins)) / n * 100) if n else 0.0
+    tp_only = (len(tps) / n * 100) if n else 0.0
 
     days = (now - datetime.fromisoformat(START_DATE + "T00:00:00+00:00")).days
     due = now.date().isoformat() >= DECISION_DATE and n >= MIN_TRADES
@@ -76,7 +89,8 @@ def metrics(led=None, equity=None, benchmark_pct=None, now=None):
         verdict = "CONTINUE"
     return {
         "trades": n, "tp": len(tps), "stops": len(stops),
-        "true_win_pct": round(true_win, 1),
+        "locks": len(locks), "lock_wins": len(lock_wins),
+        "true_win_pct": round(true_win, 1), "tp_only_win_pct": round(tp_only, 1),
         "stop_pct": round(len(stops) / n * 100, 1) if n else 0.0,
         "net_realised": round(net, 2), "gross_realised": round(gross, 2),
         "fees": round(fees, 2), "fees_estimated_trades": estimated,
@@ -92,9 +106,12 @@ def render(m):
         "CryptoIndodaxBot — pre-registered scorecard",
         f"registered 2026-09-17 | decision at {DECISION_DATE} AND >= {MIN_TRADES} trades",
         "",
-        f"  closed trades      : {m['trades']}  ({m['tp']} tp, {m['stops']} stop)",
+        f"  closed trades      : {m['trades']}  ({m['tp']} tp, {m['locks']} lock, "
+        f"{m['stops']} stop)",
         f"  true win rate      : {m['true_win_pct']}%   floor {TRUE_WIN_FLOOR}%"
         f"   -> {'FAILS' if m['fails_win_floor'] else 'ok'}",
+        f"                       = tp {m['tp']} + lock at/above +{LOCK_WIN_R:.0f}R "
+        f"{m['lock_wins']} of {m['locks']}   (tp-only {m['tp_only_win_pct']}%)",
         f"  stop rate          : {m['stop_pct']}%",
         f"  realised net       : {config.fmt_idr(m['net_realised'])}"
         f"   (gross {config.fmt_idr(m['gross_realised'])},"

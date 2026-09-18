@@ -1,32 +1,31 @@
 {
   "open": [
     {
-      "symbol": "UNI",
-      "qty": 0.37178557,
-      "entry_price": 121172.0,
-      "entry_time": "2026-09-17T02:14:35.717834+00:00",
-      "initial_stop": 111447.04713387991,
-      "stop": 111447.04713387991,
-      "high_water": 127999.0,
-      "atr_at_entry": 3319.984288706698,
-      "order_id": "60418781",
-      "half_size": true,
-      "entry_fee": 95.0,
-      "entry_fee_estimated": false,
-      "stop_anchored_to": 121407.0
-    },
-    {
       "symbol": "AVAX",
       "qty": 0.91343997,
       "entry_price": 134658.0,
       "entry_time": "2026-09-17T08:14:33.650540+00:00",
       "initial_stop": 130870.86712201982,
       "stop": 130870.86712201982,
-      "high_water": 135434.0,
+      "high_water": 135469.0,
       "atr_at_entry": 1262.377625993394,
       "order_id": "22573449",
       "half_size": true,
       "entry_fee": 259.0,
+      "entry_fee_estimated": false
+    },
+    {
+      "symbol": "PEPE",
+      "qty": 1862906.0,
+      "entry_price": 0.064,
+      "entry_time": "2026-09-18T01:14:30.703923+00:00",
+      "initial_stop": 0.062018870972973233,
+      "stop": 0.062018870972973233,
+      "high_water": 0.064567,
+      "atr_at_entry": 0.0006603763423422556,
+      "order_id": "63361960",
+      "half_size": true,
+      "entry_fee": 251.0,
       "entry_fee_estimated": false
     }
   ],
@@ -212,6 +211,20 @@
       "fees": 492.01,
       "fees_estimated": true,
       "order_id": null
+    },
+    {
+      "symbol": "UNI",
+      "qty": 0.37178557,
+      "entry_price": 121172.0,
+      "exit_price": 125948.0,
+      "entry_time": "2026-09-17T02:14:35.717834+00:00",
+      "exit_time": "2026-09-17T23:14:04.307003+00:00",
+      "pnl": 1484.65,
+      "pnl_gross": 1775.65,
+      "fees": 291.0,
+      "fees_estimated": false,
+      "order_id": "60418781",
+      "reason": "stop"
     }
   ],
   "last_entry_attempt": {
@@ -222,6 +235,7 @@
     "AVAX": "2026-09-17T08:14:31.860703+00:00",
     "LTC": "2026-09-07T09:14:23.816604+00:00",
     "XRP": "2026-09-15T00:14:25.915899+00:00",
-    "UNI": "2026-09-17T02:14:34.403603+00:00"
+    "UNI": "2026-09-17T02:14:34.403603+00:00",
+    "PEPE": "2026-09-18T01:14:28.986340+00:00"
   }
 }

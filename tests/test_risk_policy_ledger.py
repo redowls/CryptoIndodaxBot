@@ -114,6 +114,18 @@ def test_ledger_close_records_pnl_net_of_fees(tmp_path):
     assert led["closed"][0]["reason"] == "tp"
 
 
+def test_ledger_close_books_r_geometry_and_peak(tmp_path):
+    """The doctrine buckets and the giveback view read these off the trade,
+    so the trade has to carry them rather than leave them to be guessed."""
+    led = ledger.load(tmp_path / "t.json")
+    pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW)   # stop 94, 1R = 6
+    pos["high_water"] = 112.0
+    trade = ledger.close_position(led, pos, 109.0, "lock", now=NOW)
+    assert trade["initial_stop"] == 94.0
+    assert trade["r_multiple"] == 1.5
+    assert trade["peak_price"] == 112.0 and trade["peak_r"] == 2.0
+
+
 def test_ledger_uses_real_commissions_when_given(tmp_path):
     led = ledger.load(tmp_path / "t.json")
     pos = ledger.open_position(led, "SOL", 2.0, 100.0, 2.0, "oid1", now=NOW, entry_fee=7.0)

@@ -80,6 +80,10 @@ def close_position(led, pos, exit_price, reason, now=None, exit_fee=None):
     x_fee = _modelled_fee(pos["symbol"], qty * exit_price) if exit_fee is None else float(exit_fee)
     gross = (exit_price - pos["entry_price"]) * qty
     fees = entry_fee + x_fee
+    # R geometry travels with the trade so the doctrine buckets (scorecard.py)
+    # and the giveback view (replay.py) never have to guess it later.
+    r = (pos["entry_price"] - pos["initial_stop"]) if pos.get("initial_stop") else None
+    peak = pos.get("high_water")
     trade = {
         "symbol": pos["symbol"],
         "qty": qty,
@@ -93,6 +97,10 @@ def close_position(led, pos, exit_price, reason, now=None, exit_fee=None):
         "fees_estimated": bool(pos.get("entry_fee_estimated", True)) or exit_fee is None,
         "order_id": pos.get("order_id"),
         "reason": reason,
+        "initial_stop": pos.get("initial_stop"),
+        "peak_price": peak,
+        "r_multiple": round((exit_price - pos["entry_price"]) / r, 4) if r else None,
+        "peak_r": round((peak - pos["entry_price"]) / r, 4) if (r and peak) else None,
     }
     led["closed"].append(trade)
     return trade

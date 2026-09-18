@@ -6,9 +6,9 @@ NOW = datetime(2026, 9, 17, tzinfo=timezone.utc)
 DUE = datetime(2026, 11, 1, tzinfo=timezone.utc)
 
 
-def _trade(reason="tp", pnl=100.0, gross=None, fees=10.0, estimated=False):
+def _trade(reason="tp", pnl=100.0, gross=None, fees=10.0, estimated=False, r=None):
     return {"reason": reason, "pnl": pnl, "pnl_gross": gross if gross is not None else pnl + fees,
-            "fees": fees, "fees_estimated": estimated}
+            "fees": fees, "fees_estimated": estimated, "r_multiple": r}
 
 
 def _led(tps=0, stops=0, **kw):
@@ -31,6 +31,22 @@ def test_net_and_gross_are_reported_separately():
     m = scorecard.metrics(_led(tps=2, stops=1), now=NOW)
     assert m["net_realised"] < m["gross_realised"]
     assert m["fees"] > 0
+
+
+def test_a_lock_exit_is_a_win_only_at_or_above_1r():
+    """Amendment 2026-09-18, made before any lock exit existed: the ladder's
+    'lock' reason is scored by the doctrine bucket, never by its name."""
+    led = {"closed": [_trade("lock", r=1.7), _trade("lock", r=0.6), _trade("stop", pnl=-50.0)]}
+    m = scorecard.metrics(led, now=NOW)
+    assert (m["locks"], m["lock_wins"]) == (2, 1)
+    assert m["true_win_pct"] == 33.3
+    assert m["tp_only_win_pct"] == 0.0
+    assert "lock" in scorecard.render(m)
+
+
+def test_a_lock_without_geometry_is_not_a_win():
+    m = scorecard.metrics({"closed": [_trade("lock")]}, now=NOW)     # r_multiple None
+    assert m["lock_wins"] == 0 and m["true_win_pct"] == 0.0
 
 
 # --- the criterion --------------------------------------------------------

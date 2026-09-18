@@ -225,6 +225,9 @@ def run(dry_run=False, now=None):
             ledger.update_position(led, updated)
             if updated["stop"] != pos["stop"]:
                 log(f"trail {pos['symbol']}: stop -> {config.fmt_idr(updated['stop'])}")
+            if updated.get("lock") != pos.get("lock"):
+                log(f"lock {pos['symbol']}: profit lock -> {config.fmt_idr(updated['lock'])} "
+                    f"(peak {config.fmt_idr(updated['high_water'])})")
 
     # An unfunded account is not a risk event — say so plainly rather than
     # letting the circuit breaker (which treats equity<=0 as tripped) claim a

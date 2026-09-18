@@ -222,3 +222,112 @@ def test_exit_trail_never_lowers_stop():
     p["stop"] = 107.0
     action, pos = strategy.check_exit(p, _tf(close=108.0, atr=2.0), "risk_on", 5)
     assert pos["stop"] == 107.0
+
+
+# --- profit-lock ladder ---
+
+def test_lock_rungs_are_on_and_activate_at_or_above_1_5r():
+    """The refuted 2026-09-07 geometry (2 ATR from +1R) must not be reachable
+    as a rung, and a lock under +1R can only ever deliver a SCRATCH."""
+    assert config.PROFIT_LOCK_RUNGS
+    assert min(a for a, _ in config.PROFIT_LOCK_RUNGS) >= 1.5
+    assert all(t > 0 for _, t in config.PROFIT_LOCK_RUNGS)
+
+
+def test_profit_lock_trail_picks_the_tightest_rung_reached():
+    rungs = ((1.5, 2.0), (2.0, 1.0))
+    assert strategy.profit_lock_trail(8.0, 6.0, rungs) is None      # +1.33R: nothing armed
+    assert strategy.profit_lock_trail(9.0, 6.0, rungs) == 2.0       # +1.5R
+    assert strategy.profit_lock_trail(12.0, 6.0, rungs) == 1.0      # +2.0R
+    assert strategy.profit_lock_trail(12.0, 0.0, rungs) is None     # broken geometry
+
+
+def test_lock_is_inactive_below_the_first_rung(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    action, pos = strategy.check_exit(_pos(), _tf(close=108.9, atr=1.0), "risk_on", 5)
+    assert action is None and "lock" not in pos
+
+
+def test_lock_arms_on_the_peak_and_only_ratchets_up(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)   # +1.5R arms
+    assert p["lock"] == 108.0
+    action, p = strategy.check_exit(p, _tf(close=108.5, atr=2.0), "risk_on", 6)   # pullback, wider ATR
+    assert action is None and p["lock"] == 108.0                                   # never lowered
+    _, p = strategy.check_exit(p, _tf(close=111.0, atr=1.0), "risk_on", 7)        # new high
+    assert p["lock"] == 110.0
+
+
+def test_lock_exit_is_booked_as_lock(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    action, _ = strategy.check_exit(p, _tf(close=107.9, atr=1.0), "risk_on", 6)
+    assert action == "lock"
+
+
+def test_a_bar_through_both_levels_is_a_stop_not_a_lock(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    assert p["stop"] == 109.0 - config.TRAIL_ATR_MULT * 1.0
+    action, _ = strategy.check_exit(p, _tf(close=104.0, atr=1.0), "risk_on", 6)
+    assert action == "stop"
+
+
+def test_lock_never_fires_on_a_new_high(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    action, _ = strategy.check_exit(p, _tf(close=112.0, atr=1.0), "risk_on", 6)
+    assert action is None
+
+
+def test_tp_is_untouched_by_the_ladder(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    action, _ = strategy.check_exit(_pos(), _tf(close=115.5, atr=1.0), "risk_on", 5)
+    assert action == "tp"
+
+
+def test_ladder_off_is_the_old_engine(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ())
+    _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    action, p = strategy.check_exit(p, _tf(close=107.0, atr=1.0), "risk_on", 6)
+    assert action is None and "lock" not in p
+
+
+UNI_2026_09_17 = [  # (1H close, ATR14) from the stored snapshots, 03:07 .. 23:07 UTC
+    (119527, 3098), (119371, 2957), (119610, 2762), (119610, 2565), (119000, 2462),
+    (119335, 2445), (123424, 2542), (122150, 2456), (119781, 2450), (121875, 2290),
+    (122000, 2137), (127999, 2511), (127537, 2530), (126937, 2628), (136054, 3170),
+    (135888, 3098), (132553, 3041), (132852, 2824), (135000, 3013), (136000, 2798),
+    (125674, 3309),
+]
+
+
+def _walk_uni():
+    """The live UNI position of 2026-09-17: filled 121.172, stop 111.447 (1R = 9.725),
+    policy regime risk_off, through the real check_exit bar by bar."""
+    pos = {"symbol": "UNI", "qty": 0.37178557, "entry_price": 121172.0,
+           "initial_stop": 111447.0, "stop": 111447.0, "high_water": 121172.0}
+    for i, (close, atr) in enumerate(UNI_2026_09_17):
+        action, pos = strategy.check_exit(pos, _tf(close=close, atr=atr), "risk_off", i + 1)
+        if action:
+            return i, action, close, pos
+    return None, None, None, pos
+
+
+def test_uni_2026_09_17_without_the_ladder_left_on_the_trail_after_the_dip(monkeypatch):
+    """What happened live: +1.53R peak (+12.24%), one -7.6% bar at 23:07, out
+    on the 3xATR risk_off trail at +0.49R — Rp1.485 net on a position that
+    had been up Rp5.5k. TP_R sat at +20%, never in play."""
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ())
+    i, action, close, _ = _walk_uni()
+    assert (i, action, close) == (20, "stop", 125674)
+
+
+def test_uni_2026_09_17_with_the_ladder_locks_before_the_dip():
+    """Same bars through the shipped rungs: the 17:07 peak arms the lock, the
+    19:07 close under it exits at +1.17R (+9.4%), four hours before the bar
+    that took the trail. This is the trade the ladder was built for — and
+    replay --ladder shows the price of it on other trades; read both."""
+    i, action, close, _ = _walk_uni()
+    assert (i, action, close) == (16, "lock", 132553)
+    assert (close - 121172.0) / (121172.0 - 111447.0) > 1.0

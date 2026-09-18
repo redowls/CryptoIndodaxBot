@@ -124,11 +124,30 @@ def entry_candidates(snap, extras_by_sym, open_syms, reg, blocked=()):
     return candidates, rejections
 
 
+def profit_lock_trail(peak_gain, r, rungs=None):
+    """ATR distance of the tightest profit-lock rung the PEAK gain has reached,
+    or None while no rung is armed. Rungs are (activate_R, trail_ATR); see
+    config.PROFIT_LOCK_RUNGS. Taking the minimum means a misordered rung set
+    can only ever tighten."""
+    rungs = config.PROFIT_LOCK_RUNGS if rungs is None else rungs
+    if r <= 0:
+        return None
+    reached = [trail for activate, trail in rungs if peak_gain >= activate * r]
+    return min(reached) if reached else None
+
+
 def check_exit(position, h1, reg, hours_held):
     """Evaluate one open position against the current 1H data.
 
-    Returns (action, updated) where action is None|'stop'|'tp'|'time' and
-    updated is the position dict with refreshed high_water/stop (trailing).
+    Returns (action, updated) where action is None|'stop'|'lock'|'tp'|'time'
+    and updated is the position dict with refreshed high_water/stop/lock.
+
+    'lock' is the profit-lock ladder (config.PROFIT_LOCK_RUNGS): once the peak
+    gain has reached a rung, a level trails the high-water mark at that rung's
+    ATR distance and a close at or under it exits. Armed on the PEAK, not the
+    current close, so a rung once reached stays reached. It is checked after
+    the stop, so an hour that falls through both is booked as the stop it is,
+    and it can never fire on a new high because the level is always below it.
     """
     pos = dict(position)
     close, atr = h1["last_close"], h1.get("atr14")
@@ -137,8 +156,14 @@ def check_exit(position, h1, reg, hours_held):
     if atr and close - pos["entry_price"] >= r:
         mult = config.RISK_OFF_TRAIL_ATR_MULT if reg == "risk_off" else config.TRAIL_ATR_MULT
         pos["stop"] = max(pos["stop"], pos["high_water"] - mult * atr)
+    if atr:
+        trail = profit_lock_trail(pos["high_water"] - pos["entry_price"], r)
+        if trail is not None:
+            pos["lock"] = max(pos.get("lock") or 0.0, pos["high_water"] - trail * atr)
     if close <= pos["stop"]:
         return "stop", pos
+    if pos.get("lock") and close <= pos["lock"]:
+        return "lock", pos
     if close >= pos["entry_price"] + config.TP_R * r:
         return "tp", pos
     if hours_held >= config.TIME_STOP_HOURS:

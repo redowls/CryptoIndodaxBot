@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from cryptoindodax import config, replay
+from cryptoindodax import config, replay, strategy
 
 
 def _tf(close=100.0, ema8=110, ema20=105, ema55=100, rsi=55, adx=30, atr=2.0):
@@ -126,3 +126,45 @@ def test_buy_and_hold_benchmark():
     h = [_snap("2026-09-01T01:00:00+00:00", BTC=100.0),
          _snap("2026-09-02T01:00:00+00:00", BTC=110.0)]
     assert replay.buy_and_hold(h, "BTC") == 10.0
+
+
+# --- profit-lock ladder ---------------------------------------------------
+
+def test_summarize_scores_a_lock_by_its_r_not_its_name():
+    """A lock exit is a win at or above +1R and a failed trade below it; the
+    giveback figure only counts trades that got to +1R in the first place."""
+    res = {"trades": [
+        {"reason": "lock", "pnl": 50.0, "pnl_net": 45.0, "r_multiple": 1.7, "peak_r": 2.0},
+        {"reason": "lock", "pnl": 10.0, "pnl_net": 5.0, "r_multiple": 0.4, "peak_r": 1.6},
+        {"reason": "stop", "pnl": -60.0, "pnl_net": -65.0, "r_multiple": -1.0, "peak_r": 0.2}],
+        "equity_curve": [("t", 1000.0)], "start_equity": 1000.0, "end_equity": 985.0}
+    s = replay.summarize(res)
+    assert s["lock_pct"] == 66.7
+    assert s["true_win_pct"] == 33.3
+    assert s["tp_only_win_pct"] == 0.0
+    assert s["stop_pct"] == 33.3
+    assert s["reached_1r"] == 2
+    assert s["giveback_r"] == round(((2.0 - 1.7) + (1.6 - 0.4)) / 2, 2)
+
+
+def test_flat_pct_lock_is_lab_only_and_restores_the_engine(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ())      # the real engine must stay quiet
+    real = strategy.check_exit
+    pos = {"symbol": "X", "qty": 1.0, "entry_price": 100.0, "initial_stop": 94.0,
+           "stop": 94.0, "high_water": 110.0}
+    with replay._flat_pct_lock(8.0, 2.0):
+        assert strategy.check_exit is not real
+        action, _ = strategy.check_exit(pos, _tf(close=107.0, atr=1.0), "risk_on", 5)
+        assert action == "lock"                               # peak +10%, close 2.7% under it
+    assert strategy.check_exit is real
+    action, _ = strategy.check_exit(pos, _tf(close=107.0, atr=1.0), "risk_on", 5)
+    assert action is None
+
+
+def test_ladder_variants_are_pre_declared_and_legal():
+    """Every candidate arms at >= 1.5R. The single exception is the labelled
+    control — the refuted 2026-09-07 geometry — which has to be present so the
+    harness can be checked against a collapse it is known to have produced."""
+    rung_sets = [r for _, r in replay.LADDER_VARIANTS]
+    assert () in rung_sets
+    assert [r for r in rung_sets if r and r[0][0] < 1.5] == [((1.0, 2.0),)]
