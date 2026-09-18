@@ -6,13 +6,14 @@
       "entry_price": 134658.0,
       "entry_time": "2026-09-17T08:14:33.650540+00:00",
       "initial_stop": 130870.86712201982,
-      "stop": 130870.86712201982,
-      "high_water": 135469.0,
+      "stop": 138727.27146152136,
+      "high_water": 143000.0,
       "atr_at_entry": 1262.377625993394,
       "order_id": "22573449",
       "half_size": true,
       "entry_fee": 259.0,
-      "entry_fee_estimated": false
+      "entry_fee_estimated": false,
+      "lock": 141575.75715384044
     },
     {
       "symbol": "PEPE",
@@ -20,13 +21,14 @@
       "entry_price": 0.064,
       "entry_time": "2026-09-18T01:14:30.703923+00:00",
       "initial_stop": 0.062018870972973233,
-      "stop": 0.062018870972973233,
-      "high_water": 0.064567,
+      "stop": 0.06416450430270952,
+      "high_water": 0.067009,
       "atr_at_entry": 0.0006603763423422556,
       "order_id": "63361960",
       "half_size": true,
       "entry_fee": 251.0,
-      "entry_fee_estimated": false
+      "entry_fee_estimated": false,
+      "lock": 0.06606083476756984
     }
   ],
   "closed": [
