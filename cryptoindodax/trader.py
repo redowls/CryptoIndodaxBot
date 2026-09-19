@@ -12,7 +12,7 @@ import argparse
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import broker, config, data, ledger, notify, pairs, policy, risk, strategy
+from . import broker, config, data, ledger, lock, notify, pairs, policy, risk, strategy
 
 
 def log(msg):
@@ -94,7 +94,7 @@ def _exit_position(led, pos, price_hint, reason, dry_run, positions_by_sym):
     sym = pos["symbol"]
     qty = _sellable_qty(pos, positions_by_sym)
     if dry_run:
-        log(f"DRY-RUN exit {sym}: {reason} qty {qty} @ ~{config.fmt_idr(price_hint)}")
+        log(f"DRY-RUN exit {sym}: {reason} qty {qty} @ ~{config.fmt_price(price_hint)}")
         return None
     if qty <= 0:
         log(f"exit {sym}: {reason} but no sellable balance — dropping from ledger")
@@ -110,7 +110,7 @@ def _exit_position(led, pos, price_hint, reason, dry_run, positions_by_sym):
         if fill_price:
             exit_price = fill_price
         log(f"exit {sym}: {reason}, sell order {status} qty {filled_qty} "
-            f"@ {config.fmt_idr(exit_price)}")
+            f"@ {config.fmt_price(exit_price)}")
         if status == "canceled" and not filled_qty:
             log(f"exit {sym}: sell did not fill — keeping position, will retry next cycle")
             return None
@@ -125,7 +125,7 @@ def _exit_position(led, pos, price_hint, reason, dry_run, positions_by_sym):
         exit_price = fill["price"]
     trade = ledger.close_position(led, pos, exit_price, reason,
                                   exit_fee=fill["commission"] if fill["fills"] else None)
-    notify.send(f"CryptoIndodaxBot EXIT {sym} ({reason}) @ {config.fmt_idr(exit_price)} "
+    notify.send(f"CryptoIndodaxBot EXIT {sym} ({reason}) @ {config.fmt_price(exit_price)} "
                 f"P&L {config.fmt_idr(trade['pnl'])} net "
                 f"(fees {config.fmt_idr(trade['fees'])})")
     return trade
@@ -162,18 +162,31 @@ def _enter_position(led, sym, coin, equity, reg, dry_run):
     pos = ledger.open_position(led, sym, filled_qty, entry_price, atr, order_id,
                                half_size=(reg == "risk_off"),
                                entry_fee=fill["commission"] if fill["fills"] else None)
-    log(f"entry {sym}: {status} qty {filled_qty} @ {config.fmt_idr(entry_price)}, "
-        f"stop {config.fmt_idr(pos['stop'])}")
-    notify.send(f"CryptoIndodaxBot ENTRY {sym} qty {filled_qty} @ {config.fmt_idr(entry_price)} "
-                f"stop {config.fmt_idr(pos['stop'])} (regime {reg})")
+    log(f"entry {sym}: {status} qty {filled_qty} @ {config.fmt_price(entry_price)}, "
+        f"stop {config.fmt_price(pos['stop'])}")
+    notify.send(f"CryptoIndodaxBot ENTRY {sym} qty {filled_qty} @ {config.fmt_price(entry_price)} "
+                f"stop {config.fmt_price(pos['stop'])} (regime {reg})")
     return pos
 
 
 def run(dry_run=False, now=None):
+    """The hourly cycle. Holds the order lock so the fast exit watcher cannot
+    sell a position from under it; waits rather than skips, because a skipped
+    hour suspends entries, reconciliation and trailing until the next one."""
     now = now or datetime.now(timezone.utc)
     if not dry_run and not config.TRADING_ENABLED:
         log("TRADING_ENABLED is false — exiting (use --dry-run to preview decisions)")
         return
+    if dry_run:
+        return _run(dry_run, now)
+    with lock.held(wait_s=120) as acquired:
+        if not acquired:
+            log("order lock still busy after 120s — skipping this cycle")
+            return
+        return _run(dry_run, now)
+
+
+def _run(dry_run=False, now=None):
     snap = load_current_snapshot(now)
     if snap is None:
         log("no fresh snapshot (missing or older than "
@@ -224,10 +237,10 @@ def run(dry_run=False, now=None):
         else:
             ledger.update_position(led, updated)
             if updated["stop"] != pos["stop"]:
-                log(f"trail {pos['symbol']}: stop -> {config.fmt_idr(updated['stop'])}")
+                log(f"trail {pos['symbol']}: stop -> {config.fmt_price(updated['stop'])}")
             if updated.get("lock") != pos.get("lock"):
-                log(f"lock {pos['symbol']}: profit lock -> {config.fmt_idr(updated['lock'])} "
-                    f"(peak {config.fmt_idr(updated['high_water'])})")
+                log(f"lock {pos['symbol']}: profit lock -> {config.fmt_price(updated['lock'])} "
+                    f"(peak {config.fmt_price(updated['high_water'])})")
 
     # An unfunded account is not a risk event — say so plainly rather than
     # letting the circuit breaker (which treats equity<=0 as tripped) claim a

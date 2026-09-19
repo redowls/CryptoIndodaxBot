@@ -1,36 +1,5 @@
 {
-  "open": [
-    {
-      "symbol": "AVAX",
-      "qty": 0.91343997,
-      "entry_price": 134658.0,
-      "entry_time": "2026-09-17T08:14:33.650540+00:00",
-      "initial_stop": 130870.86712201982,
-      "stop": 138727.27146152136,
-      "high_water": 143000.0,
-      "atr_at_entry": 1262.377625993394,
-      "order_id": "22573449",
-      "half_size": true,
-      "entry_fee": 259.0,
-      "entry_fee_estimated": false,
-      "lock": 141575.75715384044
-    },
-    {
-      "symbol": "PEPE",
-      "qty": 1862906.0,
-      "entry_price": 0.064,
-      "entry_time": "2026-09-18T01:14:30.703923+00:00",
-      "initial_stop": 0.062018870972973233,
-      "stop": 0.06416450430270952,
-      "high_water": 0.067009,
-      "atr_at_entry": 0.0006603763423422556,
-      "order_id": "63361960",
-      "half_size": true,
-      "entry_fee": 251.0,
-      "entry_fee_estimated": false,
-      "lock": 0.06606083476756984
-    }
-  ],
+  "open": [],
   "closed": [
     {
       "symbol": "BTC",
@@ -227,6 +196,42 @@
       "fees_estimated": false,
       "order_id": "60418781",
       "reason": "stop"
+    },
+    {
+      "symbol": "AVAX",
+      "qty": 0.91343997,
+      "entry_price": 134658.0,
+      "exit_price": 141131.0,
+      "entry_time": "2026-09-17T08:14:33.650540+00:00",
+      "exit_time": "2026-09-18T17:14:07.058925+00:00",
+      "pnl": 5112.7,
+      "pnl_gross": 5912.7,
+      "fees": 800.0,
+      "fees_estimated": false,
+      "order_id": "22573449",
+      "reason": "lock",
+      "initial_stop": 130870.86712201982,
+      "peak_price": 143000.0,
+      "r_multiple": 1.7092,
+      "peak_r": 2.2027
+    },
+    {
+      "symbol": "PEPE",
+      "qty": 1862906.0,
+      "entry_price": 0.064,
+      "exit_price": 0.066506,
+      "entry_time": "2026-09-18T01:14:30.703923+00:00",
+      "exit_time": "2026-09-19T00:12:54.000620+00:00",
+      "pnl": 3897.44,
+      "pnl_gross": 4668.44,
+      "fees": 771.0,
+      "fees_estimated": false,
+      "order_id": "63361960",
+      "reason": "lock",
+      "initial_stop": 0.062018870972973233,
+      "peak_price": 0.06762,
+      "r_multiple": 1.2649,
+      "peak_r": 1.8272
     }
   ],
   "last_entry_attempt": {

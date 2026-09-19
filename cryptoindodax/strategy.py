@@ -136,6 +136,34 @@ def profit_lock_trail(peak_gain, r, rungs=None):
     return min(reached) if reached else None
 
 
+def check_levels(position, price):
+    """Test a price against the exit levels ALREADY SET on a position.
+
+    The frozen half of check_exit: it compares, it never ratchets. The fast
+    exit watcher (watchdog.py) runs between hourly cycles and calls only this,
+    so that 5-minute prices cannot advance high_water / stop / lock — doing so
+    would tighten every trail on intra-hour spikes, which is a different
+    strategy and one the hourly snapshot history cannot backtest.
+
+    Order matches check_exit exactly: stop, then lock, then take-profit. The
+    time stop is absent on purpose — a clock is not a price.
+    """
+    if not price or price <= 0:
+        return None
+    stop = position.get("stop")
+    if stop and price <= stop:
+        return "stop"
+    lock_level = position.get("lock")
+    if lock_level and price <= lock_level:
+        return "lock"
+    entry, initial = position.get("entry_price"), position.get("initial_stop")
+    if entry and initial:
+        r = entry - initial
+        if r > 0 and price >= entry + config.TP_R * r:
+            return "tp"
+    return None
+
+
 def check_exit(position, h1, reg, hours_held):
     """Evaluate one open position against the current 1H data.
 
@@ -160,12 +188,10 @@ def check_exit(position, h1, reg, hours_held):
         trail = profit_lock_trail(pos["high_water"] - pos["entry_price"], r)
         if trail is not None:
             pos["lock"] = max(pos.get("lock") or 0.0, pos["high_water"] - trail * atr)
-    if close <= pos["stop"]:
-        return "stop", pos
-    if pos.get("lock") and close <= pos["lock"]:
-        return "lock", pos
-    if close >= pos["entry_price"] + config.TP_R * r:
-        return "tp", pos
+    # One source of truth for the comparisons, shared with the fast watcher.
+    action = check_levels(pos, close)
+    if action:
+        return action, pos
     if hours_held >= config.TIME_STOP_HOURS:
         return "time", pos
     return None, pos

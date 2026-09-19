@@ -74,6 +74,8 @@ cryptoindodax/
   policy.py      Claude daily overlay, clamped so it can only tighten
   broker.py      Indodax TAPI v2 client
   trader.py      hourly cycle: reconcile → exits → entries
+  watchdog.py    fast exit watcher (*/5): live price vs levels already set
+  lock.py        flock shared by every path that can place an order
   net.py         pins outbound traffic to IPv4 so the IP whitelist matches
   notify.py      Telegram (outgoing alerts)
   saldo.py       Telegram commands — /saldo account report, cron-polled
@@ -199,6 +201,13 @@ level trails the high-water mark at that rung's ATR distance and a 1H close
 under it exits with reason `lock`. A `lock` is scored as a win only at or above
 +1R. Sizing risks 1.5% of equity per trade, max 4 positions, with a rolling 24h
 −4% circuit breaker and a 24h per-coin re-entry throttle.
+
+Exits are evaluated twice over: the hourly cycle decides **where** the stop,
+lock and take-profit sit, and `watchdog.py` runs every 5 minutes to notice when
+a live price has **breached** one. The watcher never moves a level — feeding it
+5-minute prices would ratchet trails off intra-hour spikes, which is a
+different strategy and one the hourly snapshot history cannot backtest. Both
+take an flock first, so the two can never sell the same position twice.
 
 `memory/policy.json` is a daily Claude overlay that can only make the engine
 *more* conservative (block symbols, lower the position cap, worsen the regime);

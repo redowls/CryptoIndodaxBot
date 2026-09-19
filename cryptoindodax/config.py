@@ -271,6 +271,23 @@ TELEGRAM_CHAT_IDS = [c.strip() for c in (os.getenv("TELEGRAM_CHAT_ID") or "").sp
 TELEGRAM_CHAT_ID = TELEGRAM_CHAT_IDS[0] if TELEGRAM_CHAT_IDS else None
 
 
+def fmt_price(value) -> str:
+    """A price that stays readable below Rp1.
+
+    fmt_idr rounds to whole rupiah, which is right for balances and useless for
+    prices: PEPE trades at Rp0,064 a token, so every stop, lock and fill it
+    logged came out as a flat "Rp0". Anything at or above Rp100 keeps the
+    familiar rounded form; below that the decimals are the information.
+    """
+    if value is None:
+        return "-"
+    v = float(value)
+    if abs(v) >= 100:
+        return fmt_idr(v)
+    text = f"{v:.8f}".rstrip("0").rstrip(".") if abs(v) < 1 else f"{v:,.2f}"
+    return "Rp" + text.replace(",", "|").replace(".", ",").replace("|", ".")
+
+
 def fmt_idr(amount) -> str:
     """Format a rupiah amount the way Indonesian users read it: Rp1.234.567."""
     if amount is None:
