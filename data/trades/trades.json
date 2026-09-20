@@ -1,31 +1,17 @@
 {
   "open": [
     {
-      "symbol": "DOT",
-      "qty": 5.2978,
-      "entry_price": 19999.999999999996,
-      "entry_time": "2026-09-19T02:14:35.903999+00:00",
-      "initial_stop": 19290.18609787531,
-      "stop": 19290.18609787531,
-      "high_water": 20250.0,
-      "atr_at_entry": 236.6046340415626,
-      "order_id": "53856186",
+      "symbol": "PEPE",
+      "qty": 789536.0,
+      "entry_price": 0.071927,
+      "entry_time": "2026-09-20T00:14:35.244709+00:00",
+      "initial_stop": 0.06714484543485046,
+      "stop": 0.06714484543485046,
+      "high_water": 0.071927,
+      "atr_at_entry": 0.0015940515217165144,
+      "order_id": "63425950",
       "half_size": true,
-      "entry_fee": 221.0,
-      "entry_fee_estimated": false
-    },
-    {
-      "symbol": "LINK",
-      "qty": 0.36610374,
-      "entry_price": 221582.00000000003,
-      "entry_time": "2026-09-19T15:14:38.447941+00:00",
-      "initial_stop": 211244.3204880063,
-      "stop": 211244.3204880063,
-      "high_water": 224837.0,
-      "atr_at_entry": 3445.893170664574,
-      "order_id": "64285246",
-      "half_size": true,
-      "entry_fee": 171.0,
+      "entry_fee": 119.0,
       "entry_fee_estimated": false
     }
   ],
@@ -279,6 +265,60 @@
       "peak_price": 164635.0,
       "r_multiple": 1.2791,
       "peak_r": 1.7022
+    },
+    {
+      "symbol": "XRP",
+      "qty": 5.03854278,
+      "entry_price": 25089.0,
+      "exit_price": 24132.0,
+      "entry_time": "2026-09-19T20:14:35.698459+00:00",
+      "exit_time": "2026-09-20T02:45:08.905481+00:00",
+      "pnl": -5598.89,
+      "pnl_gross": -4821.89,
+      "fees": 777.0,
+      "fees_estimated": false,
+      "order_id": "212885861",
+      "reason": "stop",
+      "initial_stop": 24358.068647466658,
+      "peak_price": 25089.0,
+      "r_multiple": -1.3093,
+      "peak_r": 0.0
+    },
+    {
+      "symbol": "DOT",
+      "qty": 5.2978,
+      "entry_price": 19999.999999999996,
+      "exit_price": 19130.0,
+      "entry_time": "2026-09-19T02:14:35.903999+00:00",
+      "exit_time": "2026-09-20T02:55:06.643610+00:00",
+      "pnl": -5255.09,
+      "pnl_gross": -4609.09,
+      "fees": 646.0,
+      "fees_estimated": false,
+      "order_id": "53856186",
+      "reason": "stop",
+      "initial_stop": 19290.18609787531,
+      "peak_price": 20250.0,
+      "r_multiple": -1.2257,
+      "peak_r": 0.3522
+    },
+    {
+      "symbol": "LINK",
+      "qty": 0.36610374,
+      "entry_price": 221582.00000000003,
+      "exit_price": 210599.1219242939,
+      "entry_time": "2026-09-19T15:14:38.447941+00:00",
+      "exit_time": "2026-09-20T02:55:09.538082+00:00",
+      "pnl": -4513.87,
+      "pnl_gross": -4020.87,
+      "fees": 493.0,
+      "fees_estimated": false,
+      "order_id": "64285246",
+      "reason": "stop",
+      "initial_stop": 211244.3204880063,
+      "peak_price": 226000.0,
+      "r_multiple": -1.0624,
+      "peak_r": 0.4274
     }
   ],
   "last_entry_attempt": {
@@ -288,8 +328,8 @@
     "LINK": "2026-09-19T15:14:35.794506+00:00",
     "AVAX": "2026-09-19T04:14:33.874610+00:00",
     "LTC": "2026-09-07T09:14:23.816604+00:00",
-    "XRP": "2026-09-15T00:14:25.915899+00:00",
+    "XRP": "2026-09-19T20:14:33.813324+00:00",
     "UNI": "2026-09-17T02:14:34.403603+00:00",
-    "PEPE": "2026-09-18T01:14:28.986340+00:00"
+    "PEPE": "2026-09-20T00:14:33.484834+00:00"
   }
 }
