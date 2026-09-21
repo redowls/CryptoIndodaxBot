@@ -16,9 +16,33 @@ def test_position_size_risks_1_5_pct():
 
 
 def test_position_size_half_in_risk_off():
+    """risk_off halves the RISK BUDGET, always — and halves the position too
+    whenever the notional cap is not in the way (here a 4.0 ATR, wide enough
+    that neither size gets clipped)."""
+    _, _, full_risk = risk.position_size(10000, 100.0, 2.0)
+    _, _, half_risk = risk.position_size(10000, 100.0, 2.0, half=True)
+    assert abs(half_risk - full_risk / 2) < 1e-9
+    full, _, _ = risk.position_size(10000, 100.0, 4.0)
+    half, _, _ = risk.position_size(10000, 100.0, 4.0, half=True)
+    assert abs(half - full / 2) < 1e-9
+
+
+def test_the_notional_cap_compresses_the_risk_off_half_size():
+    """Half size is half the risk, NOT always half the position — and raising
+    MAX_POSITIONS made that bite harder.
+
+    When the stop is narrow enough that equity/MAX_POSITIONS clips the full
+    trade but not the half one, a risk_off entry comes out at 62.5% of a full
+    entry rather than 50%. At MAX_POSITIONS=4 this same fixture was not clipped
+    and the ratio was exactly half; the 4 -> 5 change on 2026-09-21 introduced
+    the compression. It is a genuine weakening of the risk_off brake, pinned
+    here so it is a known property rather than a surprise."""
     full, _, _ = risk.position_size(10000, 100.0, 2.0)
     half, _, _ = risk.position_size(10000, 100.0, 2.0, half=True)
-    assert abs(half - full / 2) < 1e-9
+    cap = 10000 / config.MAX_POSITIONS
+    assert abs(full * 100.0 - cap) < 1e-6, "the full-size trade is clipped by the cap"
+    assert half * 100.0 < cap, "the half-size trade is not"
+    assert 0.5 < half / full < 0.7
 
 
 def test_position_size_caps_notional():

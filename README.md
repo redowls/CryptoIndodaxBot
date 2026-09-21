@@ -234,7 +234,8 @@ a 2.5R take-profit, a 120h time stop and, since 2026-09-18, a profit-lock
 ladder (`PROFIT_LOCK_RUNGS`): once a position's peak gain reaches a rung, a
 level trails the high-water mark at that rung's ATR distance and a 1H close
 under it exits with reason `lock`. A `lock` is scored as a win only at or above
-+1R. Sizing risks 1.5% of equity per trade, max 4 positions, with a rolling 24h
++1R. Sizing risks 1.5% of equity per trade, max 5 positions (each capped at a
+fifth of equity in notional), with a rolling 24h
 −4% circuit breaker and a 24h per-coin re-entry throttle.
 
 Exits are evaluated twice over: the hourly cycle decides **where** the stop,

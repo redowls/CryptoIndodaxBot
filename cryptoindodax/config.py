@@ -135,7 +135,31 @@ FORCE_IPV4 = os.getenv("INDODAX_FORCE_IPV4", "true").lower() == "true"
 # `python -m cryptoindodax.trader --dry-run` to preview decisions safely.
 TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() == "true"
 
-MAX_POSITIONS = 4          # hard cap; the daily policy may lower it, never raise it
+# Raised 4 -> 5 on 2026-09-21 at the user's request. This knob does TWO jobs,
+# and the second one is easy to miss: it is the slot count AND the divisor in
+# the per-trade notional cap (risk.position_size caps notional at
+# equity / MAX_POSITIONS). So every position is now capped at 20% of equity
+# instead of 25% — a 20% smaller trade wherever that cap binds, which on this
+# book is nearly always. Total possible exposure is unchanged at 100%.
+#
+# Replayed over 488 snapshots (2026-09-01 -> 09-21), pure engine, no overlay:
+#   cap 3   20 trades  +14.78%   maxDD 9.97%
+#   cap 4   27 trades  +18.82%   maxDD 8.42%
+#   cap 5   31 trades  +22.04%   maxDD 7.59%   <- best return AND lowest DD
+#   cap 6   34 trades  +20.07%   maxDD 6.80%
+# More, smaller positions diversified the book faster than the shrinking size
+# cost it, up to 5; at 6 the per-trade size starts losing more than breadth
+# adds. That is a peak, not a plateau, so 5 is not a safe default to drift past.
+#
+# CAVEAT measured at the same time: replayed against the daily policy overlay
+# AS IT ACTUALLY STOOD, cap 5 scored WORSE than cap 4 (+1.63% vs +2.27%) on the
+# identical 22 trades. The routine wrote 2-4 on most days, the engine takes the
+# smaller of policy and config, so the extra slot never opened while the 20%
+# size cut applied to every trade. Raising this number is only an improvement
+# if the daily routine actually writes 5 — which is why that prompt was changed
+# in the same commit. If the routine starts capping at 4 again, this should go
+# back to 4 rather than sit here paying the size cut for nothing.
+MAX_POSITIONS = 5          # hard cap; the daily policy may lower it, never raise it
 RISK_PCT = 0.015            # equity fraction risked per trade
 STOP_ATR_MULT = 3.0         # initial stop distance = 1R
 # REVERTED 2026-09-15 from 2.0 back to 4.0, and the reasoning that produced 2.0
