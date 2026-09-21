@@ -106,7 +106,42 @@ Installed cron:
 14 * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.trader   >> logs/trader.log 2>&1
 *  * * * * cd /root/CryptoIndodaxBot && .venv/bin/python -m cryptoindodax.saldo    >> logs/saldo.log 2>&1
 0  0 * * * /root/claude-routines/run-routine.sh cryptoindodax-daily   # 00:00 WIB
+20 * * * * /root/CryptoIndodaxBot/web/publish.sh  >> logs/dashboard.log 2>&1
 ```
+
+## Web dashboard
+
+<https://indodax.185-202-236-11.sslip.io/> — equity against an equal-weight hold
+of the watchlist, profit and loss per coin, open positions, the trade log and the
+pre-registered decision criterion. **The link is open: no login, no password.**
+A "Showing Rp / Showing %" switch in the header hides every absolute figure —
+rupiah amounts, prices and even coin quantities, which are account balances
+written the long way round — so the page can be shown to someone without
+disclosing the account size.
+
+```
+cryptoindodax/dashboard.py   read-only aggregation -> dashboard.json
+web/index.html style.css app.js   the page; no build step, no dependencies
+web/publish.sh               regenerate + sync into Caddy's web root (cron :20)
+```
+
+Caddy runs as the `caddy` user and `/root` is `0700`, so nothing in this repo is
+servable in place. `publish.sh` is the only thing that writes to
+`/var/www/cryptoindodax`, and it renames the JSON into place so a reader
+mid-refresh gets the old file whole rather than half of the new one. Run it by
+hand after editing anything in `web/`.
+
+**The equity curve is reconstructed, not recorded.** Nothing here has ever
+logged account equity over time, so the line is rebuilt from the snapshot
+archive plus the ledger, and it assumes no rupiah entered or left the account
+since `START_DATE`. `dashboard.py` therefore also asks the broker for live
+equity and publishes the gap; the page shows that gap rather than hiding it. As
+of 2026-09-21 the gap is −Rp21.994 on a Rp505.591 account — the ledger claims
+about Rp22.000 more profit than the account actually holds, because 13 of 20
+closed trades recorded the hourly snapshot close as their fill price (see the
+`avg_fill_price` note in `replay.py`) and carry a modelled fee instead of the
+reported one. The headline figure on the page is the live balance, not the
+ledger's.
 
 ## Telegram commands
 

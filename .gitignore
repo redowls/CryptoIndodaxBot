@@ -7,3 +7,4 @@ logs/
 data/snapshots/
 data/pairs.json
 data/telegram_state.json
+data/dashboard.json
