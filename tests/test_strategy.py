@@ -331,3 +331,76 @@ def test_uni_2026_09_17_with_the_ladder_locks_before_the_dip():
     i, action, close, _ = _walk_uni()
     assert (i, action, close) == (16, "lock", 132553)
     assert (close - 121172.0) / (121172.0 - 111447.0) > 1.0
+
+
+# --- break-even floor (config.BREAKEVEN_AT_R) -----------------------------
+
+def test_the_dead_zone_exists_without_the_floor():
+    """The defect the floor is for: the trail ARMS at +1R but sits
+    TRAIL/STOP = 1.33R below the peak, so a position peaking between +1.00R and
+    +1.33R has an armed stop BELOW its own entry. FARTCOIN died here on
+    2026-09-23: peak +1.04R, exit -0.39R."""
+    assert config.TRAIL_ATR_MULT / config.STOP_ATR_MULT > 1.0
+    assert config.PROFIT_LOCK_RUNGS[0][0] > config.TRAIL_ATR_MULT / config.STOP_ATR_MULT, \
+        "the first lock rung sits above the dead zone, so it cannot close it"
+
+
+def test_floor_is_off_by_default():
+    assert config.BREAKEVEN_AT_R is None
+
+
+def test_floor_lifts_the_stop_to_entry_once_the_peak_clears_1r(monkeypatch):
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
+    monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", False)
+    # entry 100, stop 94, 1R = 6. close 106 = exactly +1R.
+    _, pos = strategy.check_exit(_pos(), _tf(close=106.0, atr=2.0), "risk_on", 5)
+    assert pos["stop"] == 100.0, "the trail alone would have left it at 98"
+
+
+def test_floor_can_include_the_round_trip(monkeypatch):
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
+    monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", True)
+    _, pos = strategy.check_exit(_pos(), _tf(close=106.0, atr=2.0), "risk_on", 5)
+    assert pos["stop"] == 100.0 * (1 + config.OBSERVED_ROUND_TRIP_PCT / 100.0)
+
+
+def test_floor_does_not_arm_below_the_threshold(monkeypatch):
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
+    _, pos = strategy.check_exit(_pos(), _tf(close=105.0, atr=2.0), "risk_on", 5)   # +0.83R
+    assert pos["stop"] == 94.0
+
+
+def test_floor_never_lowers_a_stop(monkeypatch):
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
+    p = _pos(hw=115.0)
+    p["stop"] = 112.0                       # trail already well above break-even
+    _, pos = strategy.check_exit(p, _tf(close=113.0, atr=0.5), "risk_on", 5)
+    assert pos["stop"] >= 112.0
+
+
+def test_floor_turns_the_fartcoin_loss_into_a_scratch(monkeypatch):
+    """Regression for the real trade. Entry 3462, initial stop 3158.66
+    (1R = 303.34 = 8.76% of price), peak 3779 = +1.04R, ATR ~107.
+
+    Without the floor the trail sits 1.42R under the peak, i.e. BELOW entry,
+    and the position exited at -0.39R (-Rp3.516). With it, the stop cannot go
+    under the entry once +1R has printed."""
+    pos = {"symbol": "FARTCOIN", "qty": 25.42, "entry_price": 3462.0,
+           "initial_stop": 3158.665, "stop": 3158.665, "high_water": 3462.0}
+    bars = [(3779.0, 107.0), (3600.0, 107.0), (3450.0, 107.0)]
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", None)
+    p = dict(pos)
+    for i, (c, a) in enumerate(bars):
+        act, p = strategy.check_exit(p, _tf(close=c, atr=a), "neutral", i + 1)
+        if act:
+            break
+    assert act == "stop" and p["stop"] < 3462.0, "the armed trail is under water"
+
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
+    monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", True)
+    q = dict(pos)
+    for i, (c, a) in enumerate(bars):
+        act2, q = strategy.check_exit(q, _tf(close=c, atr=a), "neutral", i + 1)
+        if act2:
+            break
+    assert q["stop"] >= 3462.0, "the floor must hold the stop at or above entry"

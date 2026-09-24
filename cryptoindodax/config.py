@@ -228,6 +228,24 @@ TP_R = 2.5                  # hard take-profit in R multiples
 # frequent wins over the occasional full +2.5R — not on evidence.
 # To turn it off: PROFIT_LOCK_RUNGS = ()
 PROFIT_LOCK_RUNGS = ((1.5, 1.0),)
+
+# --- break-even floor: close the dead zone -------------------------------
+# The trail ARMS at +1.00R but sits TRAIL_ATR_MULT/STOP_ATR_MULT = 1.33R below
+# the high-water mark, so a position that peaks between +1.00R and +1.33R has
+# an armed "trailing stop" sitting BELOW its own entry price. It can only lock
+# in a loss, and PROFIT_LOCK_RUNGS cannot rescue it because the first rung is
+# +1.50R. FARTCOIN on 2026-09-23 died exactly there: peak +1.04R, trail 1.42R
+# under the peak, exit -0.39R (-Rp3.516).
+#
+# BREAKEVEN_AT_R arms a floor once the PEAK reaches that many R: from then on
+# the stop may never sit below the entry price (plus the round trip when
+# BREAKEVEN_INCLUDES_FEES, so "break even" means net zero rather than a fee's
+# worth of loss). It only ever raises a stop, never lowers one, and it does not
+# move where a winner exits.
+#
+# None = off. Left OFF pending the harness — see replay --breakeven.
+BREAKEVEN_AT_R = None
+BREAKEVEN_INCLUDES_FEES = True
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries
 REENTRY_THROTTLE_HOURS = 24

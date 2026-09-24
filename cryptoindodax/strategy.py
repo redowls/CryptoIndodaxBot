@@ -184,6 +184,15 @@ def check_exit(position, h1, reg, hours_held):
     if atr and close - pos["entry_price"] >= r:
         mult = config.RISK_OFF_TRAIL_ATR_MULT if reg == "risk_off" else config.TRAIL_ATR_MULT
         pos["stop"] = max(pos["stop"], pos["high_water"] - mult * atr)
+    # Break-even floor: once the PEAK has cleared BREAKEVEN_AT_R, the stop may
+    # never sit below the entry again. This closes the dead zone where an armed
+    # trail is still under water (see config.BREAKEVEN_AT_R). Raises only.
+    if config.BREAKEVEN_AT_R and r > 0 \
+            and pos["high_water"] - pos["entry_price"] >= config.BREAKEVEN_AT_R * r:
+        floor = pos["entry_price"]
+        if config.BREAKEVEN_INCLUDES_FEES:
+            floor *= 1 + config.OBSERVED_ROUND_TRIP_PCT / 100.0
+        pos["stop"] = max(pos["stop"], floor)
     if atr:
         trail = profit_lock_trail(pos["high_water"] - pos["entry_price"], r)
         if trail is not None:
