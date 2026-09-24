@@ -365,3 +365,36 @@ def test_unfunded_account_reports_plainly_not_as_circuit_breaker(tmp_path, monke
     out = capsys.readouterr().out
     assert "no equity" in out
     assert "circuit breaker" not in out
+
+
+# --- the hourly holdings report -------------------------------------------
+#
+# It is a message, not a trigger. Nothing it does may cost a position.
+
+def _led_with_one_open():
+    return {"open": [{"symbol": "DOT", "qty": 10.0, "entry_price": 20_000.0,
+                      "initial_stop": 18_000.0, "stop": 18_000.0,
+                      "high_water": 20_000.0,
+                      "entry_time": "2026-07-14T10:00:00+00:00"}], "closed": []}
+
+
+def test_a_broken_report_never_breaks_the_cycle(monkeypatch):
+    from cryptoindodax import holdings
+    monkeypatch.setattr(holdings, "render", lambda *a, **k: 1 / 0)
+    monkeypatch.setattr(trader.notify, "send", lambda text: pytest.fail("should not send"))
+    trader._report_holdings(_led_with_one_open(), {"DOT": 20_500.0}, None, False, now=NOW)
+
+
+def test_dead_tickers_fall_back_to_the_snapshot_rather_than_dropping_the_message(monkeypatch):
+    sent = []
+    monkeypatch.setattr(trader.data, "fetch_tickers",
+                        lambda *a, **k: (_ for _ in ()).throw(trader.data.FetchError("down")))
+    monkeypatch.setattr(trader.notify, "send", sent.append)
+    trader._report_holdings(_led_with_one_open(), {"DOT": 20_500.0}, None, False, now=NOW)
+    assert sent and "DOT" in sent[0] and "+2,50%" in sent[0]
+
+
+def test_a_dry_run_reports_to_the_log_and_never_to_telegram(monkeypatch):
+    monkeypatch.setattr(trader.data, "fetch_tickers", lambda *a, **k: {})
+    monkeypatch.setattr(trader.notify, "send", lambda text: pytest.fail("dry run must not send"))
+    trader._report_holdings(_led_with_one_open(), {"DOT": 20_500.0}, None, True, now=NOW)

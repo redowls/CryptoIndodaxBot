@@ -36,11 +36,8 @@ def log(msg):
 
 # --- formatting -----------------------------------------------------------
 
-def fmt_pct(value):
-    """Percent the way Indonesian users read it: +1,23% / -0,55%."""
-    if value is None:
-        return "-"
-    return f"{value:+.2f}%".replace(".", ",")
+# Shared with the hourly holdings report so the two never read differently.
+fmt_pct = config.fmt_pct
 
 
 def fmt_qty(qty):

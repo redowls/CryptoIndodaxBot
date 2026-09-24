@@ -374,6 +374,13 @@ TELEGRAM_CHAT_IDS = [c.strip() for c in (os.getenv("TELEGRAM_CHAT_ID") or "").sp
 TELEGRAM_CHAT_ID = TELEGRAM_CHAT_IDS[0] if TELEGRAM_CHAT_IDS else None
 
 
+def fmt_pct(value) -> str:
+    """Percent the way Indonesian users read it: +1,23% / -0,55%."""
+    if value is None:
+        return "-"
+    return f"{value:+.2f}%".replace(".", ",")
+
+
 def fmt_price(value) -> str:
     """A price that stays readable below Rp1.
 

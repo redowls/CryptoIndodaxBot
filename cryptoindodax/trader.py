@@ -12,7 +12,8 @@ import argparse
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import broker, config, data, ledger, lock, notify, pairs, policy, risk, strategy
+from . import (broker, config, data, holdings, ledger, lock, notify, pairs,
+               policy, risk, strategy)
 
 
 def log(msg):
@@ -186,6 +187,34 @@ def run(dry_run=False, now=None):
         return _run(dry_run, now)
 
 
+def _report_holdings(led, marks, acct, dry_run, now=None):
+    """Telegram the open book after the cycle. Never allowed to break trading.
+
+    Everything here is best-effort: a formatting slip or a dead ticker endpoint
+    must cost a message, not a position. The ledger is already saved by now, so
+    there is no state left to corrupt either way.
+    """
+    try:
+        positions = list(led.get("open", []))
+        prices = marks
+        try:
+            prices = holdings.prices_for(positions, data.fetch_tickers(), fallback=marks)
+        except Exception as e:                # noqa: BLE001 - stale marks beat no message
+            log(f"holdings report: live tickers unavailable ({e}) — using snapshot closes")
+            prices = holdings.prices_for(positions, {}, fallback=marks)
+        text = holdings.render(positions, prices,
+                               cash=acct["cash"] if acct else None,
+                               equity=acct["equity"] if acct else None,
+                               now=now)
+        log(f"holdings report: {len(positions)} position(s)")
+        if not dry_run:
+            notify.send(text)
+        else:
+            log("DRY-RUN holdings report:\n" + text)
+    except Exception as e:                    # noqa: BLE001
+        log(f"holdings report failed ({e}) — trading unaffected")
+
+
 def _run(dry_run=False, now=None):
     snap = load_current_snapshot(now)
     if snap is None:
@@ -249,6 +278,7 @@ def _run(dry_run=False, now=None):
         log("account has no equity — deposit IDR before trading; nothing to do")
         if not dry_run:
             ledger.save(led)
+        _report_holdings(led, marks, acct if have_keys else None, dry_run, now=now)
         return
 
     if risk.circuit_breaker_tripped(led["closed"], equity, now=now):
@@ -256,6 +286,7 @@ def _run(dry_run=False, now=None):
             "of equity — no new entries")
         if not dry_run:
             ledger.save(led)
+        _report_holdings(led, marks, acct if have_keys else None, dry_run, now=now)
         return
 
     # entries
@@ -283,6 +314,7 @@ def _run(dry_run=False, now=None):
 
     if not dry_run:
         ledger.save(led)
+    _report_holdings(led, marks, acct if have_keys else None, dry_run, now=now)
     log("cycle done")
 
 
