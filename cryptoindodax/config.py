@@ -243,9 +243,70 @@ PROFIT_LOCK_RUNGS = ((1.5, 1.0),)
 # worth of loss). It only ever raises a stop, never lowers one, and it does not
 # move where a winner exits.
 #
-# None = off. Left OFF pending the harness — see replay --breakeven.
+# TRIED AND REJECTED 2026-09-24 — left here because the reasoning is worth
+# keeping, and because the portfolio headline says the opposite of the truth.
+#
+# On aggregate it looked good: FULL -1.56% -> -0.51%, maxDD 9.00% -> 7.26%.
+# The trade-level diff killed it. The floor arms at +1R and then a NORMAL
+# retrace takes the position out at break-even, so it amputates exactly the
+# trades that were going to pay for everything else:
+#     LINK 2026-09-05   tp +3.69R (+Rp9.478)  ->  stop +0.16R (-Rp189)
+# the single biggest winner in the whole history, for -Rp9.667.
+#
+# What it buys in exchange is the dead zone, worth at most 0.33R a trade, and
+# it hit two trades here (BTC +0.40R, FARTCOIN -0.39R). Paying 3.53R to save
+# 0.33R twice is a bad trade whatever the aggregate says.
+#
+# Running it WITH the percent ladder scores +2.21% against the ladder alone at
+# +1.95%, which looks like it earns its place — but that +0.26pp is the freed
+# slot being reused profitably elsewhere, a second-order compounding artifact
+# of this one 26-trade sample, not a property to rely on. The percent ladder
+# already covers the meme cases the floor was meant to catch, and covers them
+# better (FARTCOIN +0.22R vs +0.03R, MOG +0.22R vs unchanged at -1.76R).
+#
+# The dead zone therefore remains OPEN for the majors, where the percent ladder
+# does not reach: on BTC (1R = 2.26% of price) a +5% rung is +2.21R, long past
+# it. Reopening this needs a rule that protects the dead zone WITHOUT capping a
+# winner that retraces through +1R — not this one.
 BREAKEVEN_AT_R = None
 BREAKEVEN_INCLUDES_FEES = True
+
+# --- percent profit ladder: give back a little, not all of it ------------
+# (peak % above entry that ARMS the rung, stop % above entry it holds).
+# The user's design, 2026-09-24, and it measured better than anything derived
+# from ATR. Rungs only ever ratchet up and feed the SAME `lock` level the ATR
+# ladder uses, so the 5-minute watcher honours them with no extra code.
+#
+# WHY A PERCENTAGE, HAVING ARGUED FOR R EVERYWHERE ELSE
+# It is volatility-blind on purpose, and that turns out to be the point. A +5%
+# peak is +2.21R on BTC (1R = 2.26% of price) and only +0.57R on FARTCOIN
+# (1R = 8.76%). So this ladder essentially never arms on the majors — they are
+# already near take-profit by then — and fires on the high-ATR meme names,
+# which is exactly where a double-digit gain evaporates inside an hour. The
+# R-expressed equivalent (BREAKEVEN_AT_R = 0.5) applied the same tightness to
+# every coin and lost money.
+#
+# HARNESS, 549 snapshots, policy overlay replayed from git:
+#     bot as it stood     FULL -1.56%   BULL +3.73%   BEAR -5.75%   maxDD 9.00%
+#     these rungs         FULL +1.95%   BULL +3.73%   BEAR -2.39%   maxDD 6.49%
+#     + breakeven floor   FULL +2.21%   BULL +3.40%   BEAR -2.39%   maxDD 6.05%
+# Sweeping the first rung: 3% scores -2.41% (tighter than the noise, chokes
+# trades), 4% -1.09%, 5% +1.95%, 6% +1.25%, 7% +2.62%, 8% +0.87%, and 10%+ is
+# identical to no ladder because it never arms. A band, not a single spike.
+#
+# READ THIS BEFORE TRUSTING THE NUMBERS: across 26 trades these rungs change
+# exactly TWO, both high-ATR memes — MOG -Rp14.109 -> +Rp1.100 and FARTCOIN
+# -Rp4.292 -> +Rp1.124. MOG alone is three quarters of the gain. That is the
+# same "few trades carry everything" fragility that made CryptoAutoBot's edge
+# illusory, so treat this as provisional until more meme trades land.
+#
+# It also LOWERS the true win rate (42.3% -> 38.5%) while raising the money,
+# because a +0.22R lock is a failed trade under the standing stop doctrine.
+# That trade-off was the user's explicit call on 2026-09-24. Do not "fix" the
+# win rate by loosening these rungs.
+#
+# () turns it off.
+PROFIT_LOCK_PCT_RUNGS = ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0))
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries
 REENTRY_THROTTLE_HOURS = 24

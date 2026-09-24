@@ -1,3 +1,4 @@
+import pytest
 from cryptoindodax import config, strategy
 
 
@@ -244,6 +245,7 @@ def test_profit_lock_trail_picks_the_tightest_rung_reached():
 
 def test_lock_is_inactive_below_the_first_rung(monkeypatch):
     monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ())   # isolate the ATR ladder
     action, pos = strategy.check_exit(_pos(), _tf(close=108.9, atr=1.0), "risk_on", 5)
     assert action is None and "lock" not in pos
 
@@ -288,6 +290,8 @@ def test_tp_is_untouched_by_the_ladder(monkeypatch):
 
 def test_ladder_off_is_the_old_engine(monkeypatch):
     monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ())
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ())
+    monkeypatch.setattr(config, "BREAKEVEN_AT_R", None)
     _, p = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
     action, p = strategy.check_exit(p, _tf(close=107.0, atr=1.0), "risk_on", 6)
     assert action is None and "lock" not in p
@@ -345,7 +349,11 @@ def test_the_dead_zone_exists_without_the_floor():
         "the first lock rung sits above the dead zone, so it cannot close it"
 
 
-def test_floor_is_off_by_default():
+def test_floor_stays_off_because_it_amputates_winners():
+    """Tried at 1.0R on 2026-09-24 and rejected on the trade-level diff: it
+    turned LINK's +3.69R take-profit (+Rp9.478) into a +0.16R stop (-Rp189),
+    paying 3.53R to save at most 0.33R twice. The aggregate looked fine, which
+    is exactly why the per-trade view is the one that decides."""
     assert config.BREAKEVEN_AT_R is None
 
 
@@ -395,6 +403,7 @@ def test_floor_turns_the_fartcoin_loss_into_a_scratch(monkeypatch):
     def run(floor):
         monkeypatch.setattr(config, "BREAKEVEN_AT_R", floor)
         monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", True)
+        monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ())   # isolate the floor
         pos = dict(base)
         for i, (c, a) in enumerate(bars):
             action, pos = strategy.check_exit(pos, _tf(close=c, atr=a), "neutral", i + 1)
@@ -411,3 +420,105 @@ def test_floor_turns_the_fartcoin_loss_into_a_scratch(monkeypatch):
     assert act2 == "stop"
     assert pos2["stop"] >= base["entry_price"], "the floor holds the stop at or above entry"
     assert px2 > px, "and it gets out earlier, before the deeper bar"
+
+
+# --- percent profit ladder (config.PROFIT_LOCK_PCT_RUNGS) -----------------
+
+def test_pct_rungs_are_configured_and_only_ever_ratchet_up():
+    rungs = config.PROFIT_LOCK_PCT_RUNGS
+    assert rungs, "the percent ladder is live; () would disable it"
+    peaks = [p for p, _ in rungs]
+    stops = [s for _, s in rungs]
+    assert peaks == sorted(peaks) and stops == sorted(stops)
+    for peak, stop in rungs:
+        assert 0 < stop < peak, "a rung must lock in profit, below its own trigger"
+
+
+def test_pct_level_is_none_below_the_first_rung():
+    assert strategy.profit_lock_pct_level(1000.0, 1049.0) is None      # +4.9%
+
+
+def test_pct_level_holds_the_highest_rung_reached():
+    assert strategy.profit_lock_pct_level(1000.0, 1050.0) == 1025.0    # +5%  -> +2.5%
+    assert strategy.profit_lock_pct_level(1000.0, 1099.0) == 1025.0    # still the first
+    assert strategy.profit_lock_pct_level(1000.0, 1100.0) == pytest.approx(1065.0)
+    assert strategy.profit_lock_pct_level(1000.0, 1500.0) == 1160.0    # past the last
+
+
+def test_pct_level_survives_a_misordered_rung_set():
+    """Taking the max means a typo can only ever hold a HIGHER floor."""
+    assert strategy.profit_lock_pct_level(1000.0, 1200.0,
+                                          rungs=((10.0, 6.5), (5.0, 2.5))) == pytest.approx(1065.0)
+
+
+def test_pct_level_ignores_broken_inputs():
+    assert strategy.profit_lock_pct_level(0, 1100.0) is None
+    assert strategy.profit_lock_pct_level(1000.0, None) is None
+    assert strategy.profit_lock_pct_level(1000.0, 1100.0, rungs=()) is None
+
+
+def test_pct_ladder_sets_the_lock_and_needs_no_atr(monkeypatch):
+    """It must work on an hour where the indicator went missing, because the
+    ATR ladder cannot and that is when a position is most exposed."""
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 2.5),))
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    p = _pos(entry=100.0, stop=94.0, hw=100.0)
+    _, pos = strategy.check_exit(p, {"status": "ok", "last_close": 106.0, "atr14": None},
+                                 "risk_on", 5)
+    assert pos["lock"] == pytest.approx(102.5), "peak +6% arms the +2.5% rung"
+
+
+def test_pct_ladder_takes_the_higher_of_the_two_ladders(monkeypatch):
+    """Both ladders write one `lock` level and the HIGHER one wins, so adding
+    the percent ladder can only ever tighten, never loosen."""
+    monkeypatch.setattr(config, "PROFIT_LOCK_RUNGS", ((1.5, 1.0),))
+    # entry 100, 1R = 6, close 109 = +1.5R -> ATR rung locks at 109 - 1*ATR = 108
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 4.5),))   # 104.5, lower
+    _, pos = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    assert pos["lock"] == pytest.approx(108.0)
+    # now make the percent rung the tighter of the two
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 8.5),))   # 108.5, higher
+    _, pos = strategy.check_exit(_pos(), _tf(close=109.0, atr=1.0), "risk_on", 5)
+    assert pos["lock"] == pytest.approx(108.5)
+
+
+def test_pct_ladder_never_lowers_an_existing_lock(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 2.5),))
+    p = _pos(entry=100.0, stop=94.0, hw=106.0)
+    p["lock"] = 105.0                       # ATR ladder already set a tighter one
+    _, pos = strategy.check_exit(p, _tf(close=106.0, atr=1.0), "risk_on", 5)
+    assert pos["lock"] == 105.0
+
+
+def test_pct_lock_exit_is_reported_as_lock(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 2.5),))
+    p = _pos(entry=100.0, stop=94.0, hw=106.0)
+    _, p = strategy.check_exit(p, {"status": "ok", "last_close": 106.0, "atr14": None},
+                               "risk_on", 5)
+    action, _ = strategy.check_exit(p, {"status": "ok", "last_close": 102.0, "atr14": None},
+                                    "risk_on", 6)
+    assert action == "lock"
+
+
+def test_the_five_minute_watcher_honours_a_percent_lock(monkeypatch):
+    """check_levels reads the same `lock` field, so the fast exit watcher gets
+    the percent ladder without knowing it exists."""
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", ((5.0, 2.5),))
+    p = _pos(entry=100.0, stop=94.0, hw=106.0)
+    _, p = strategy.check_exit(p, {"status": "ok", "last_close": 106.0, "atr14": None},
+                               "risk_on", 5)
+    assert strategy.check_levels(p, 102.4) == "lock"
+    assert strategy.check_levels(p, 102.6) is None
+
+
+def test_mog_and_fartcoin_regression():
+    """The two real trades the ladder was measured on. MOG peaked +15.6% and
+    exited at -1.76R (-Rp14.109); FARTCOIN peaked +9.2% and exited at -0.49R.
+    Both are high-ATR memes where 1R is ~8-9% of price, which is exactly why a
+    +5% rung reaches them and never reaches BTC."""
+    # MOG: peak +15.6% clears the third rung, so the floor is entry +11%
+    assert strategy.profit_lock_pct_level(100.0, 115.6) == pytest.approx(111.0)
+    # FARTCOIN: peak +9.2% clears only the first, floor is entry +2.5%
+    assert strategy.profit_lock_pct_level(3462.0, 3779.0) == pytest.approx(3462.0 * 1.025)
+    # BTC on the same day peaked +2.38% — the ladder never arms on a major
+    assert strategy.profit_lock_pct_level(1_513_998_000.0, 1_550_000_000.0) is None

@@ -230,11 +230,16 @@ Ported from CryptoAutoBot, then tuned on Indodax: a BTC 1D regime gate
 above 80), not already up more than 5% on the day, green 1H close, and a
 volatility floor (`MIN_ATR_PCT`) that refuses coins whose fees would eat the
 stop. Exits are a 3×ATR stop, a 4×ATR trail once past +1R (3× in `risk_off`),
-a 2.5R take-profit, a 120h time stop and, since 2026-09-18, a profit-lock
-ladder (`PROFIT_LOCK_RUNGS`): once a position's peak gain reaches a rung, a
-level trails the high-water mark at that rung's ATR distance and a 1H close
-under it exits with reason `lock`. A `lock` is scored as a win only at or above
-+1R. Sizing risks 1.5% of equity per trade, max 5 positions (each capped at a
+a 2.5R take-profit, a 120h time stop and two profit-lock ladders that share
+one `lock` level, the tighter of the two winning. `PROFIT_LOCK_RUNGS` (ATR)
+trails the high-water mark once the peak clears a rung in R.
+`PROFIT_LOCK_PCT_RUNGS` (percent, added 2026-09-24) holds a floor at a fixed
+percentage above entry once the peak clears one: +5% peak locks +2.5%, +10%
+locks +6.5%, and so on. Being volatility-blind is the point — a +5% peak is
++2.21R on BTC but only +0.57R on FARTCOIN, so the percent ladder reaches the
+high-ATR meme names and never fires on the majors. A `lock` is scored as a win
+only at or above +1R, so this deliberately LOWERS the true win rate while
+raising the money. Sizing risks 1.5% of equity per trade, max 5 positions (each capped at a
 fifth of equity in notional), with a rolling 24h
 −4% circuit breaker and a 24h per-coin re-entry throttle.
 

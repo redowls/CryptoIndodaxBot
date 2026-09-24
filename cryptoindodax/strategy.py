@@ -164,6 +164,21 @@ def check_levels(position, price):
     return None
 
 
+def profit_lock_pct_level(entry, high_water, rungs=None):
+    """Price floor from the PERCENT ladder, or None while no rung is reached.
+
+    Rungs are (peak % above entry that arms it, stop % above entry it holds) —
+    see config.PROFIT_LOCK_PCT_RUNGS. Taking the max of the reached rungs means
+    a misordered rung set can only ever hold a HIGHER floor, never a lower one.
+    """
+    rungs = config.PROFIT_LOCK_PCT_RUNGS if rungs is None else rungs
+    if not rungs or not entry or entry <= 0 or not high_water:
+        return None
+    peak_pct = (high_water / entry - 1) * 100.0
+    reached = [stop for peak, stop in rungs if peak_pct >= peak]
+    return entry * (1 + max(reached) / 100.0) if reached else None
+
+
 def check_exit(position, h1, reg, hours_held):
     """Evaluate one open position against the current 1H data.
 
@@ -197,6 +212,12 @@ def check_exit(position, h1, reg, hours_held):
         trail = profit_lock_trail(pos["high_water"] - pos["entry_price"], r)
         if trail is not None:
             pos["lock"] = max(pos.get("lock") or 0.0, pos["high_water"] - trail * atr)
+    # The percent ladder feeds the SAME lock level, so the 5-minute watcher
+    # picks it up for free. It needs no ATR, so it still works on a coin whose
+    # indicator went missing this hour.
+    pct_level = profit_lock_pct_level(pos["entry_price"], pos["high_water"])
+    if pct_level is not None:
+        pos["lock"] = max(pos.get("lock") or 0.0, pct_level)
     # One source of truth for the comparisons, shared with the fast watcher.
     action = check_levels(pos, close)
     if action:
