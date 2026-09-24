@@ -1,6 +1,6 @@
 import pytest
 
-from cryptoindodax import pairs
+from cryptoindodax import cashflow, pairs
 
 PERMISSIVE = {"trade_min_base_currency": 10_000, "trade_min_traded_currency": 0.0,
               "price_round": 8, "trade_fee_percent_taker": 0.2}
@@ -25,3 +25,16 @@ def _no_network_pair_metadata(monkeypatch, request):
     if request.node.fspath.basename == "test_pairs.py":
         return
     monkeypatch.setattr(pairs, "load", lambda *a, **k: _AnyPair())
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cashflows(monkeypatch, tmp_path):
+    """No test may read or write the live deposit record.
+
+    `equity_curve`, `daily_pnl` and `scorecard.metrics` all fall back to
+    `cashflow.load()` when no flows are passed, which is right in production and
+    a trap in a test: the suite would silently price its fixtures against a real
+    Rp500.823 top-up. Pointing the path at tmp makes the default "no flows"
+    everywhere unless a test says otherwise.
+    """
+    monkeypatch.setattr(cashflow, "PATH", tmp_path / "cashflows.json")

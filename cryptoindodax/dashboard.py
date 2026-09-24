@@ -5,12 +5,14 @@ but its own output file, so it is safe to run from cron alongside the trader.
 
 THE EQUITY CURVE IS RECONSTRUCTED, NOT RECORDED
 
-Nothing in this bot has ever logged account equity over time: `broker.get_account`
-answers for *now*, and the answer is gone when the process exits. So the curve is
-rebuilt from the two things that were kept — the hourly snapshot archive (one
-close per watchlist coin since START_DATE) and the trade ledger:
+No equity *series* was ever stored: `broker.get_account` answers for now, and the
+answer is gone when the process exits. (The trader prints one equity line per run
+to its log, which `cashflow.observations` reads to catch unrecorded cash moves —
+but a text log is not a series store.) So the curve is rebuilt from the three
+things that were kept — the hourly snapshot archive (one close per watchlist coin
+since START_DATE), the trade ledger, and the record of external cash:
 
-    equity(t) = START_EQUITY + realised_net(exit_time <= t)
+    equity(t) = START_EQUITY + deposits(t) + realised_net(exit_time <= t)
                              + unrealised(positions open at t, marked at t)
 
 It reuses the ledger's own net `pnl` — the audited, fee-inclusive field — so the
@@ -18,8 +20,13 @@ curve cannot quietly disagree with the scorecard about how much was made.
 
 WHAT THE CURVE ASSUMES, AND WHERE IT BREAKS
 
-  * **No deposits or withdrawals since START_DATE.** Move rupiah into or out of
-    the Indodax account and every point after it is wrong by that amount.
+  * **Every deposit and withdrawal is recorded in `cashflow.py`.** It used to
+    assume there were none, and a Rp500.823 top-up on 2026-09-23 duly printed
+    as +98% profit. Deposits now move the curve *and* the benchmark by the same
+    cash at the same instant, so the two lines stay comparable, and the headline
+    return is time-weighted — a transfer changes what the account is worth, never
+    what the strategy returned. An *unrecorded* flow still breaks everything
+    after it, which is why `cashflow.unexplained()` hunts for them.
   * **Hourly resolution.** An intra-hour spike is invisible — exactly as it is
     to the trader, which also only sees 1H closes.
   * **Fees land at the exit.** A closed trade stores one combined `fees` figure,
@@ -45,7 +52,7 @@ import sys
 from collections import OrderedDict
 from datetime import datetime, timezone
 
-from . import config, scorecard
+from . import cashflow, config, scorecard
 
 OUTPUT_PATH = config.ROOT / "data" / "dashboard.json"
 RECENT_TRADES = 30
@@ -87,15 +94,23 @@ def latest_marks(history):
 
 # --- the curve ------------------------------------------------------------
 
-def equity_curve(history, led, start_equity=None, watchlist=None):
-    """[{t, equity, benchmark, invested, positions}, ...], one point per snapshot.
+def equity_curve(history, led, start_equity=None, watchlist=None, flows=None):
+    """[{t, equity, capital, pnl, benchmark, ...}, ...], one point per snapshot.
 
     `benchmark` is an equal-weight buy-and-hold of the coins priced in the FIRST
     snapshot — the same construction the scorecard uses, so the two agree. A coin
     that only appears later is excluded rather than credited with a partial-window
     return it never had to earn.
+
+    `capital` is the cash actually contributed by that point: START_EQUITY plus
+    every recorded deposit, minus withdrawals. `equity - capital` is therefore
+    the strategy's P&L, untouched by transfers, and `return_pct` chains it into a
+    time-weighted return. The benchmark receives the same cash at the same
+    instant — an equal-weight holder who also topped up — so comparing the two
+    lines stays fair on both axes.
     """
     start_equity = start_equity if start_equity is not None else scorecard.START_EQUITY
+    flows = cashflow.load() if flows is None else flows
     watchlist = watchlist if watchlist is not None else config.WATCHLIST
     if not history:
         return []
@@ -107,8 +122,12 @@ def equity_curve(history, led, start_equity=None, watchlist=None):
 
     opening = {s: p for s, p in _closes(history[0][1]).items() if s in watchlist}
     marks, curve = {}, []
+    bench_equity, prev_level = start_equity, None
+    prev_capital = start_equity
     for when, snap in history:
         marks.update(_closes(snap))          # carry the last known close forward
+        capital = start_equity + cashflow.net_at(flows, when)
+        deposit = capital - prev_capital
 
         realised = sum(t.get("pnl", 0.0) for t in closed if t["_out"] <= when)
 
@@ -127,26 +146,54 @@ def equity_curve(history, led, start_equity=None, watchlist=None):
                 held += 1
 
         moves = [marks[s] / opening[s] - 1 for s in opening if marks.get(s)]
-        benchmark = start_equity * (1 + sum(moves) / len(moves)) if moves else start_equity
+        level = (1 + sum(moves) / len(moves)) if moves else 1.0
+        if prev_level:
+            bench_equity *= level / prev_level
+        bench_equity += deposit              # the holder topped up too
+        prev_level = level
 
         curve.append({
             "t": when.isoformat(),
-            "equity": round(start_equity + realised + unrealised, 2),
-            "benchmark": round(benchmark, 2),
+            "equity": round(capital + realised + unrealised, 2),
+            "capital": round(capital, 2),
+            "deposit": round(deposit, 2),
+            "pnl": round(realised + unrealised, 2),
+            "benchmark": round(bench_equity, 2),
+            "benchmark_pct": round((level - 1) * 100, 4),
             "invested": round(invested, 2),
             "positions": held,
         })
+        prev_capital = capital
+
+    # One implementation of the time-weighted return, annotated onto the points
+    # it came from. `roi_pct` is the same curve read the other way: profit over
+    # the cash actually contributed by that point.
+    for point, ret in zip(curve, cashflow.twr_series(curve)):
+        point["twr_pct"] = round(ret, 4)
+        point["roi_pct"] = (round(point["pnl"] / point["capital"] * 100, 4)
+                            if point["capital"] else 0.0)
     return curve
 
 
-def daily_pnl(led):
-    """Realised P&L bucketed by the UTC day the trade closed, ascending."""
+def daily_pnl(led, start_equity=None, flows=None):
+    """Realised P&L bucketed by the UTC day the trade closed, ascending.
+
+    Each row carries the `capital` at work that day, so a day's result can be
+    shown as a percentage of the money that was actually exposed to it rather
+    than of whatever the account happened to hold on day one.
+    """
+    start_equity = start_equity if start_equity is not None else scorecard.START_EQUITY
+    flows = cashflow.load() if flows is None else flows
     days = OrderedDict()
     for t in sorted(led.get("closed", []), key=lambda x: x.get("exit_time") or ""):
         if not t.get("exit_time"):
             continue
-        key = _parse(t["exit_time"]).date().isoformat()
-        row = days.setdefault(key, {"date": key, "net": 0.0, "trades": 0})
+        when = _parse(t["exit_time"])
+        key = when.date().isoformat()
+        row = days.setdefault(key, {
+            "date": key, "net": 0.0, "trades": 0,
+            "capital": round(start_equity + cashflow.net_at(flows, when), 2),
+        })
         row["net"] = round(row["net"] + t.get("pnl", 0.0), 2)
         row["trades"] += 1
     return list(days.values())
@@ -283,14 +330,17 @@ def recent_trades(led, limit=RECENT_TRADES):
 
 # --- the whole document ---------------------------------------------------
 
-def build(history, led, live_equity=None, start_equity=None, now=None, watchlist=None):
+def build(history, led, live_equity=None, start_equity=None, now=None, watchlist=None,
+          flows=None, unrecorded=None):
     """Everything the page renders, in one JSON-serialisable dict."""
     now = now or datetime.now(timezone.utc)
     start_equity = start_equity if start_equity is not None else scorecard.START_EQUITY
     watchlist = watchlist if watchlist is not None else config.WATCHLIST
+    flows = cashflow.load() if flows is None else flows
 
     marks = latest_marks(history)
-    curve = equity_curve(history, led, start_equity=start_equity, watchlist=watchlist)
+    curve = equity_curve(history, led, start_equity=start_equity, watchlist=watchlist,
+                         flows=flows)
     assets = per_asset(led, marks)
     positions = open_positions(led, marks, now=now)
 
@@ -300,11 +350,28 @@ def build(history, led, live_equity=None, start_equity=None, now=None, watchlist
     fees = round(sum(t.get("fees", 0.0) for t in closed), 2)
     unrealised = round(sum(p["unrealised"] or 0.0 for p in positions), 2)
 
-    reconstructed = curve[-1]["equity"] if curve else round(start_equity + realised + unrealised, 2)
+    deposits = cashflow.net_at(flows, now)
+    invested_capital = start_equity + deposits
+    reconstructed = (curve[-1]["equity"] if curve
+                     else round(invested_capital + realised + unrealised, 2))
     benchmark_equity = curve[-1]["benchmark"] if curve else None
-    benchmark_pct = (round((benchmark_equity / start_equity - 1) * 100, 2)
-                     if benchmark_equity else None)
+    # The benchmark's own percentage, NOT its equity over the day-one balance:
+    # once a deposit is added to the hold, that ratio measures the transfer too.
+    benchmark_pct = round(curve[-1]["benchmark_pct"], 2) if curve else None
     equity = live_equity if live_equity is not None else reconstructed
+    net_pnl = round(equity - invested_capital, 2)
+    return_pct = (round(net_pnl / invested_capital * 100, 2)
+                  if invested_capital else None)
+
+    # The curve's SHAPE comes from the ledger, but its LEVEL must come from the
+    # account or the headline inherits the ledger's optimism: right now the two
+    # disagree by Rp21.994 of unrecorded fill slippage, which would read as
+    # profit that was never in the account. So the time-weighted figure is
+    # computed with the last point pinned to the live balance.
+    anchored = curve
+    if curve and live_equity is not None:
+        anchored = curve[:-1] + [dict(curve[-1], equity=round(live_equity, 2))]
+    twr_pct = round(cashflow.twr(anchored), 2) if anchored else None
 
     peak = ddown = 0.0
     for point in curve:                       # max drawdown off the reconstructed curve
@@ -312,7 +379,8 @@ def build(history, led, live_equity=None, start_equity=None, now=None, watchlist
         if peak:
             ddown = min(ddown, (point["equity"] / peak - 1) * 100)
 
-    card = scorecard.metrics(led, equity=live_equity, benchmark_pct=benchmark_pct, now=now)
+    card = scorecard.metrics(led, equity=live_equity, benchmark_pct=benchmark_pct,
+                             now=now, deposits=deposits, account_pct=twr_pct)
 
     return {
         "meta": {
@@ -322,6 +390,11 @@ def build(history, led, live_equity=None, start_equity=None, now=None, watchlist
             "watchlist": list(watchlist),
             "trading_enabled": config.TRADING_ENABLED,
             "snapshots": len(history),
+            "cashflows": list(flows),
+            # Cash the account moved that neither a trade nor a recorded flow
+            # explains. Non-empty means every return on this page is wrong by
+            # that much, and the page says so rather than quietly averaging it in.
+            "unrecorded_cashflows": list(unrecorded or []),
             "decision_date": scorecard.DECISION_DATE,
             "min_trades": scorecard.MIN_TRADES,
             "lock_win_r": scorecard.LOCK_WIN_R,
@@ -332,7 +405,19 @@ def build(history, led, live_equity=None, start_equity=None, now=None, watchlist
             "reconstructed_equity": reconstructed,
             "live_equity": round(live_equity, 2) if live_equity is not None else None,
             "drift": round(live_equity - reconstructed, 2) if live_equity is not None else None,
-            "return_pct": round((equity / start_equity - 1) * 100, 2),
+            "deposits": round(deposits, 2),
+            "invested_capital": round(invested_capital, 2),
+            "net_pnl": net_pnl,
+            # The headline: profit over the cash actually put in. A deposit
+            # raises the denominator and the balance by the same amount, so it
+            # can no longer read as a +98% gain.
+            "return_pct": return_pct if return_pct is not None else 0.0,
+            # The same account with the timing of deposits removed — the only
+            # figure it is fair to set against a buy-and-hold percentage, since
+            # a buy-and-hold has no transfers to time. It answers a different
+            # question from return_pct and the two may legitimately disagree in
+            # sign; both are published so neither can be quoted alone.
+            "twr_pct": twr_pct,
             "benchmark_equity": benchmark_equity,
             "benchmark_pct": benchmark_pct,
             "realised_net": realised,
@@ -355,7 +440,7 @@ def build(history, led, live_equity=None, start_equity=None, now=None, watchlist
         },
         "scorecard": card,
         "curve": curve,
-        "daily": daily_pnl(led),
+        "daily": daily_pnl(led, start_equity=start_equity, flows=flows),
         "assets": assets,
         "positions": positions,
         "trades": recent_trades(led),
@@ -383,14 +468,25 @@ def _main(argv=None):
 
     history = replay.load_history()
     led = ledger.load()
-    doc = build(history, led, live_equity=_live_equity(latest_marks(history)))
+    flows = cashflow.load()
+    doc = build(history, led, live_equity=_live_equity(latest_marks(history)),
+                flows=flows,
+                unrecorded=cashflow.unexplained(cashflow.observations(), flows, led))
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=1))
     t = doc["totals"]
     print(f"{doc['meta']['generated_at']} wrote {out} — equity {config.fmt_idr(t['equity'])} "
-          f"({t['return_pct']:+.2f}%), {t['trades']} closed, {t['open_positions']} open, "
+          f"({t['return_pct']:+.2f}% on {config.fmt_idr(t['invested_capital'])} "
+          f"contributed"
+          + (f", {t['twr_pct']:+.2f}% time-weighted" if t['twr_pct'] is not None else "")
+          + "), "
+          f"{t['trades']} closed, {t['open_positions']} open, "
           f"drift {config.fmt_idr(t['drift']) if t['drift'] is not None else 'n/a'}", flush=True)
+    for gap in doc["meta"]["unrecorded_cashflows"]:
+        print(f"  !! unrecorded cash move {config.fmt_idr(gap['residual'])} "
+              f"at {gap['to']} — every return above is wrong by that much until "
+              "it is recorded (python -m cryptoindodax.cashflow check)", flush=True)
     return 0
 
 

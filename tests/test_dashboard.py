@@ -237,5 +237,76 @@ def test_daily_pnl_buckets_realised_trades_by_exit_day():
                                   _closed("ETH", "tp", pnl=300.0, hour_out=5),
                                   _closed("SOL", "stop", pnl=-200.0, hour_out=30)]}
     days = dashboard.daily_pnl(led)
-    assert days == [{"date": "2026-09-01", "net": 800.0, "trades": 2},
-                    {"date": "2026-09-02", "net": -200.0, "trades": 1}]
+    from cryptoindodax import scorecard
+    cap = scorecard.START_EQUITY
+    assert days == [{"date": "2026-09-01", "net": 800.0, "trades": 2, "capital": cap},
+                    {"date": "2026-09-02", "net": -200.0, "trades": 1, "capital": cap}]
+
+
+# --- deposits -------------------------------------------------------------
+#
+# A Rp500.823 top-up on 2026-09-23 read as +98% profit on an account that was
+# down, because live equity was divided by a hardcoded day-one balance. These
+# pin the shape of the fix: cash in raises the base, never the return.
+
+def _flow(hour, amount=500_000.0):
+    return [{"at": (START + timedelta(hours=hour)).isoformat(), "amount": amount}]
+
+
+def test_a_deposit_raises_the_base_and_returns_nothing():
+    curve = dashboard.equity_curve(_hours(4, {"BTC": [100, 100, 100, 100]}),
+                                   {"open": [], "closed": []},
+                                   start_equity=500_000.0, flows=_flow(2))
+    assert [p["capital"] for p in curve] == [500_000.0, 500_000.0, 1_000_000.0, 1_000_000.0]
+    assert [p["pnl"] for p in curve] == [0.0, 0.0, 0.0, 0.0]
+    assert curve[-1]["equity"] == 1_000_000.0
+    assert curve[-1]["twr_pct"] == 0.0
+
+
+def test_the_benchmark_takes_the_same_cash_at_the_same_hour():
+    """An equal-weight holder topped up too. Comparing against one who did not
+    would hand the bot a 500k head start it never earned."""
+    curve = dashboard.equity_curve(_hours(4, {"BTC": [100, 100, 100, 100]}),
+                                   {"open": [], "closed": []},
+                                   start_equity=500_000.0, flows=_flow(2))
+    assert curve[-1]["benchmark"] == 1_000_000.0
+    assert curve[-1]["benchmark_pct"] == 0.0
+
+
+def test_a_deposit_is_never_reported_as_profit():
+    doc = dashboard.build(_hours(4, {"BTC": [100, 100, 100, 100]}),
+                          {"open": [], "closed": []},
+                          live_equity=990_000.0, start_equity=500_000.0,
+                          now=NOW, flows=_flow(2))
+    t = doc["totals"]
+    assert t["deposits"] == 500_000.0
+    assert t["invested_capital"] == 1_000_000.0
+    assert t["net_pnl"] == -10_000.0
+    assert t["return_pct"] == -1.0          # the old arithmetic said +98.0
+
+
+def test_drift_measures_the_ledger_against_the_account_not_the_deposit():
+    """Drift is the reconciliation alarm. A top-up must not set it off."""
+    doc = dashboard.build(_hours(4, {"BTC": [100, 100, 100, 100]}),
+                          {"open": [], "closed": []},
+                          live_equity=990_000.0, start_equity=500_000.0,
+                          now=NOW, flows=_flow(2))
+    assert doc["totals"]["drift"] == -10_000.0
+
+
+def test_the_time_weighted_figure_is_anchored_to_the_account_not_the_ledger():
+    """The ledger overstates by Rp21.994 of unrecorded slippage. Left alone it
+    would publish profit that was never in the account."""
+    led = {"open": [], "closed": [_closed("BTC", "tp", pnl=20_000.0, hour_in=0, hour_out=1)]}
+    doc = dashboard.build(_hours(4, {"BTC": [100, 100, 100, 100]}), led,
+                          live_equity=1_000_000.0, start_equity=500_000.0,
+                          now=NOW, flows=_flow(2))
+    assert doc["totals"]["reconstructed_equity"] == 1_020_000.0
+    assert doc["totals"]["twr_pct"] == 1.96      # 4.0 if it trusted the ledger
+
+
+def test_an_unrecorded_cash_move_is_published_rather_than_averaged_in():
+    gap = {"from": "x", "to": "y", "moved": 1.0, "explained": 0.0, "residual": 1.0}
+    doc = dashboard.build(_hours(2, {"BTC": [100, 100]}), {"open": [], "closed": []},
+                          start_equity=500_000.0, now=NOW, flows=[], unrecorded=[gap])
+    assert doc["meta"]["unrecorded_cashflows"] == [gap]

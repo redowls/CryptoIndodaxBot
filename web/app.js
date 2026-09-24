@@ -199,9 +199,14 @@ function ticks(lo, hi, count = 5) {
 
 function drawCurve(width, tip) {
   const points = D.curve;
-  const start = D.meta.start_equity;
   const asPct = state.mode === 'pct';
-  const value = (v) => (asPct ? (v / start - 1) * 100 : v);
+  // In percent mode each point carries its own figure: profit over the cash
+  // contributed BY THEN. Dividing by a fixed day-one balance would price the
+  // whole curve against money that was not in the account for most of it.
+  const val = (p, key) => (asPct
+    ? (key === 'benchmark' ? p.benchmark_pct : p.roi_pct)
+    : p[key]);
+  const label = (p, key) => money(p[key], key === 'benchmark' ? p.benchmark_pct : p.roi_pct);
 
   const height = Math.max(260, Math.min(400, Math.round(width * 0.32)));
   const pad = {
@@ -210,7 +215,7 @@ function drawCurve(width, tip) {
   const plotW = width - pad.l - pad.r;
   const plotH = height - pad.t - pad.b;
 
-  const ys = points.flatMap((p) => [value(p.equity), value(p.benchmark)]);
+  const ys = points.flatMap((p) => [val(p, 'equity'), val(p, 'benchmark')]);
   let lo = Math.min(...ys);
   let hi = Math.max(...ys);
   const slack = (hi - lo) * 0.12 || 1;
@@ -219,7 +224,7 @@ function drawCurve(width, tip) {
   const t0 = new Date(points[0].t).getTime();
   const t1 = new Date(points[points.length - 1].t).getTime();
   const X = (p) => pad.l + ((new Date(p.t).getTime() - t0) / (t1 - t0 || 1)) * plotW;
-  const Y = (v) => pad.t + plotH - ((value(v) - lo) / (hi - lo)) * plotH;
+  const Y = (v) => pad.t + plotH - ((v - lo) / (hi - lo)) * plotH;
 
   const g = s('g');
   const svg = s('svg', { viewBox: `0 0 ${width} ${height}`, width, height }, [g]);
@@ -249,14 +254,14 @@ function drawCurve(width, tip) {
   }));
 
   // the shortfall: everything the equal-weight hold made that the bot did not
-  const band = points.map((p) => `${X(p)},${Y(p.benchmark)}`).join(' L')
-    + ' L' + [...points].reverse().map((p) => `${X(p)},${Y(p.equity)}`).join(' L');
+  const band = points.map((p) => `${X(p)},${Y(val(p, 'benchmark'))}`).join(' L')
+    + ' L' + [...points].reverse().map((p) => `${X(p)},${Y(val(p, 'equity'))}`).join(' L');
   g.append(s('path', {
     d: `M${band} Z`, fill: cssVar('--series-2'), 'fill-opacity': .08, stroke: 'none',
   }));
 
   const line = (key, color) => s('path', {
-    d: 'M' + points.map((p) => `${X(p)},${Y(p[key])}`).join(' L'),
+    d: 'M' + points.map((p) => `${X(p)},${Y(val(p, key))}`).join(' L'),
     fill: 'none', stroke: color, 'stroke-width': 2,
     'stroke-linejoin': 'round', 'stroke-linecap': 'round',
   });
@@ -266,10 +271,10 @@ function drawCurve(width, tip) {
   // direct end labels — dropped rather than stacked if the lines converge
   const last = points[points.length - 1];
   const ends = [
-    { y: Y(last.equity), color: cssVar('--series-1'), name: 'Account',
-      v: money(last.equity, (last.equity / start - 1) * 100) },
-    { y: Y(last.benchmark), color: cssVar('--series-2'), name: 'Equal-weight hold',
-      v: money(last.benchmark, (last.benchmark / start - 1) * 100) },
+    { y: Y(val(last, 'equity')), color: cssVar('--series-1'), name: 'Account',
+      v: label(last, 'equity') },
+    { y: Y(val(last, 'benchmark')), color: cssVar('--series-2'), name: 'Equal-weight hold',
+      v: label(last, 'benchmark') },
   ];
   for (const e of ends) {
     g.append(s('circle', {
@@ -305,17 +310,19 @@ function drawCurve(width, tip) {
     if (!p) return;
     const x = X(p);
     hair.setAttribute('x1', x); hair.setAttribute('x2', x); hair.setAttribute('opacity', 1);
-    [p.equity, p.benchmark].forEach((v, i) => {
-      dots[i].setAttribute('cx', x); dots[i].setAttribute('cy', Y(v));
+    ['equity', 'benchmark'].forEach((key, i) => {
+      dots[i].setAttribute('cx', x); dots[i].setAttribute('cy', Y(val(p, key)));
       dots[i].setAttribute('opacity', 1);
     });
-    showTip(tip, x * (box.width / width), Y(Math.max(p.equity, p.benchmark)) * (box.height / height), [
-      { name: 'Account', color: cssVar('--series-1'),
-        value: money(p.equity, (p.equity / start - 1) * 100) },
-      { name: 'Equal-weight hold', color: cssVar('--series-2'),
-        value: money(p.benchmark, (p.benchmark / start - 1) * 100) },
+    const rows = [
+      { name: 'Account', color: cssVar('--series-1'), value: label(p, 'equity') },
+      { name: 'Equal-weight hold', color: cssVar('--series-2'), value: label(p, 'benchmark') },
       { name: p.positions === 1 ? 'Position open' : 'Positions open', value: String(p.positions) },
-    ], fmtWhen(p.t));
+    ];
+    if (p.deposit) rows.push({ name: p.deposit > 0 ? 'Deposited' : 'Withdrew', value: rp(Math.abs(p.deposit)) });
+    showTip(tip, x * (box.width / width),
+      Y(Math.max(val(p, 'equity'), val(p, 'benchmark'))) * (box.height / height),
+      rows, fmtWhen(p.t));
   };
   const leave = () => {
     hair.setAttribute('opacity', 0);
@@ -432,7 +439,7 @@ function drawDaily(width, tip) {
   const rows = D.daily;
   const asPct = state.mode === 'pct';
   const start = D.meta.start_equity;
-  const value = (r) => (asPct ? (r.net / start) * 100 : r.net);
+  const value = (r) => (asPct ? (r.net / (r.capital || start)) * 100 : r.net);
 
   const height = 210;
   const pad = { t: 12, r: 4, b: 30, l: asPct ? 52 : 74 };
@@ -556,7 +563,11 @@ function statusRail() {
 
 function hero() {
   const t = D.totals;
-  const behind = isNum(t.benchmark_pct) ? t.return_pct - t.benchmark_pct : null;
+  // Against a buy-and-hold percentage the fair figure is the time-weighted one:
+  // a hold has no transfers to time, so return_pct (which does) would penalise
+  // or flatter the bot purely for when money arrived.
+  const strategyPct = isNum(t.twr_pct) ? t.twr_pct : t.return_pct;
+  const behind = isNum(t.benchmark_pct) ? strategyPct - t.benchmark_pct : null;
   const verdict = D.scorecard.verdict;
   const tone = verdict.startsWith('STOP') ? 'is-critical'
     : verdict === 'CONTINUE' ? 'is-live' : 'is-off';
@@ -574,11 +585,23 @@ function hero() {
           `${t.days_live} days live, `,
           h('b', { text: String(t.trades) }),
           ' trades closed. ',
+          t.deposits
+            ? h('span', {}, [
+                h('b', { text: rp(Math.abs(t.deposits)) }),
+                t.deposits > 0 ? ' was paid in along the way' : ' was withdrawn along the way',
+                ', counted as capital rather than profit, so the figure above is ',
+                h('b', { text: money(t.net_pnl, t.return_pct, { sign: true }) }),
+                ' on ', h('b', { text: rp(t.invested_capital) }), ' contributed. ',
+              ])
+            : null,
           isNum(behind)
             ? h('span', {}, [
                 'Simply holding the watchlist would have returned ',
                 h('b', { text: pct(t.benchmark_pct) }),
-                `, so the bot is ${Math.abs(behind).toFixed(2)} points `,
+                ', against ',
+                h('b', { text: pct(strategyPct) }),
+                t.deposits ? ' for the strategy once deposit timing is removed' : ' for the bot',
+                `, so it is ${Math.abs(behind).toFixed(2)} points `,
                 behind < 0 ? 'behind it.' : 'ahead of it.',
               ])
             : null,
@@ -622,6 +645,29 @@ function hero() {
   return section;
 }
 
+/** Cash the account moved that no trade and no recorded transfer explains.
+ *  Every percentage on this page is wrong by that much, so it leads the page
+ *  rather than sitting in a footnote. */
+function cashWarning() {
+  const gaps = D.meta.unrecorded_cashflows || [];
+  if (!gaps.length) return null;
+  const total = gaps.reduce((a, g) => a + g.residual, 0);
+  return h('section', { class: 'recon' }, [
+    h('div', { class: 'recon-icon', text: '▲' }),
+    h('div', {}, [
+      h('h2', { text: 'Unrecorded cash movement' }),
+      h('p', {}, [
+        'The account balance moved by ', h('b', { text: rp(Math.abs(total)) }),
+        ` across ${gaps.length} ${gaps.length === 1 ? 'hour' : 'hours'} with no trade behind it`,
+        ' and no transfer on record. Until that is resolved every return on this page is ',
+        'wrong by that amount. It is either a deposit or withdrawal that needs recording, ',
+        'or a fill the ledger never saw — and the two are indistinguishable from outside, ',
+        'which is why nothing here guesses.',
+      ]),
+    ]),
+  ]);
+}
+
 function reconciliation() {
   const t = D.totals;
   if (!isNum(t.drift)) return null;
@@ -634,9 +680,9 @@ function reconciliation() {
       h('h2', { text: material ? 'The ledger and the account disagree' : 'Ledger reconciles with the account' }),
       material
         ? h('p', {}, [
-            'The trade ledger adds up to ', h('b', { text: money(claimed, (claimed / D.meta.start_equity) * 100, { sign: true }) }),
-            ' of profit, but the Indodax account is only ', h('b', { text: money(t.equity - D.meta.start_equity, t.return_pct, { sign: true }) }),
-            ' up — a gap of ', h('b', { text: money(t.drift, (t.drift / D.meta.start_equity) * 100, { sign: true }) }),
+            'The trade ledger adds up to ', h('b', { text: money(claimed, (claimed / t.invested_capital) * 100, { sign: true }) }),
+            ' of profit, but the Indodax account is only ', h('b', { text: money(t.net_pnl, t.return_pct, { sign: true }) }),
+            ' up — a gap of ', h('b', { text: money(t.drift, (t.drift / t.invested_capital) * 100, { sign: true }) }),
             '. Every figure on this page that comes from the ledger is that much too kind. ',
             'The live account balance is the number to trust, and it is what the headline above shows. ',
             `Most of the gap is unrecorded fill slippage: ${t.fees_estimated_trades} of ${t.trades} closed trades `,
@@ -660,7 +706,7 @@ function kpis() {
   ]);
 
   return h('section', { class: 'kpis' }, [
-    tile('Realised', money(t.realised_net, (t.realised_net / D.meta.start_equity) * 100, { sign: true }),
+    tile('Realised', money(t.realised_net, (t.realised_net / t.invested_capital) * 100, { sign: true }),
       signClass(t.realised_net), `${t.trades} closed trades`),
     tile('Unrealised', money(t.unrealised, t.invested ? (t.unrealised / (t.invested - t.unrealised)) * 100 : null, { sign: true }),
       signClass(t.unrealised), `${t.open_positions} open`),
@@ -734,7 +780,7 @@ function dailyTable() {
       h('td', { text: String(r.trades) }),
       h('td', {
         class: signClass(r.net),
-        text: money(r.net, (r.net / D.meta.start_equity) * 100, { sign: true }),
+        text: money(r.net, (r.net / (r.capital || D.meta.start_equity)) * 100, { sign: true }),
       }),
     ]))),
   ]);
@@ -933,6 +979,7 @@ function render() {
     h('main', {}, [
       h('div', { class: 'wrap' }, [
         hero(),
+        cashWarning(),
         reconciliation(),
         kpis(),
         h('div', { class: 'split' }, [

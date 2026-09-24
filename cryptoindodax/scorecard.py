@@ -29,6 +29,15 @@ below that it is a failed trade exactly like a stop. The tp-only figure is
 still printed beside it so the original definition never disappears. The
 decision constants did not move.
 
+AMENDMENT 2026-09-24 — a correction, not a change of criterion
+
+The account leg was computed as `(equity - START_EQUITY) / START_EQUITY`, which
+silently treats a deposit as profit. A Rp500.823 top-up on 2026-09-23 therefore
+read as +98% on an account that was down, and the "trails an equal-weight hold"
+leg reported "ahead" while the account trailed by 24 points. External cash is
+now recorded in `cashflow.py` and subtracted first. The criterion's constants
+did not move; the number it was reading was wrong, and is now right.
+
 WHAT THIS DELIBERATELY DOES NOT DO
 
 It does not suggest a fix, and it does not tune anything. If the criterion
@@ -39,7 +48,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from . import config
+from . import cashflow, config
 
 DECISION_DATE = "2026-10-17"
 MIN_TRADES = 40
@@ -56,9 +65,20 @@ def load_ledger():
         return {"open": [], "closed": []}
 
 
-def metrics(led=None, equity=None, benchmark_pct=None, now=None):
-    """Everything the criterion needs, plus the verdict."""
+def metrics(led=None, equity=None, benchmark_pct=None, now=None,
+            deposits=None, account_pct=None):
+    """Everything the criterion needs, plus the verdict.
+
+    `deposits` is net external cash contributed since START_DATE (cashflow.py);
+    it is capital, never profit, so it is added to the base and subtracted from
+    the gain. `account_pct` lets a caller that owns an equity curve supply the
+    time-weighted return, which is the figure comparable with a percentage
+    benchmark; without one this falls back to simple return on contributed
+    capital, and says which it used.
+    """
     led = led if led is not None else load_ledger()
+    if deposits is None:
+        deposits = cashflow.total(cashflow.load())
     now = now or datetime.now(timezone.utc)
     closed = led.get("closed", [])
     n = len(closed)
@@ -76,7 +96,12 @@ def metrics(led=None, equity=None, benchmark_pct=None, now=None):
     days = (now - datetime.fromisoformat(START_DATE + "T00:00:00+00:00")).days
     due = now.date().isoformat() >= DECISION_DATE and n >= MIN_TRADES
 
-    account_pct = ((equity - START_EQUITY) / START_EQUITY * 100) if equity else None
+    invested = START_EQUITY + deposits
+    net_pnl = (equity - invested) if equity else None
+    roi_pct = (net_pnl / invested * 100) if (equity and invested > 0) else None
+    method = "time-weighted" if account_pct is not None else "simple"
+    if account_pct is None:
+        account_pct = roi_pct
     trails = (account_pct is not None and benchmark_pct is not None
               and account_pct < benchmark_pct)
 
@@ -96,6 +121,9 @@ def metrics(led=None, equity=None, benchmark_pct=None, now=None):
         "fees": round(fees, 2), "fees_estimated_trades": estimated,
         "days_live": days, "decision_due": due,
         "account_pct": account_pct, "benchmark_pct": benchmark_pct,
+        "account_pct_method": method, "roi_pct": roi_pct,
+        "deposits": round(deposits, 2), "invested_capital": round(invested, 2),
+        "net_pnl": round(net_pnl, 2) if net_pnl is not None else None,
         "trails_benchmark": trails, "fails_win_floor": fails_win,
         "verdict": verdict,
     }
@@ -120,8 +148,17 @@ def render(m):
     if m["fees_estimated_trades"]:
         lines.append(f"  NOTE: {m['fees_estimated_trades']} trade(s) carry modelled fees, "
                      "not exchange-reported ones")
+    if m["deposits"]:
+        lines.append(f"  deposits           : {config.fmt_idr(m['deposits'])}"
+                     f"   (capital, not profit — contributed "
+                     f"{config.fmt_idr(m['invested_capital'])} in total)")
     if m["account_pct"] is not None:
-        lines.append(f"  account since start: {m['account_pct']:+.2f}%")
+        lines.append(f"  account since start: {m['account_pct']:+.2f}%"
+                     f"   ({m['account_pct_method']})")
+    if m["net_pnl"] is not None and m["deposits"]:
+        lines.append(f"                       = {config.fmt_idr(m['net_pnl'])} on "
+                     f"{config.fmt_idr(m['invested_capital'])} contributed "
+                     f"({m['roi_pct']:+.2f}% simple)")
     if m["benchmark_pct"] is not None:
         lines.append(f"  equal-weight hold  : {m['benchmark_pct']:+.2f}%"
                      f"   -> {'TRAILS' if m['trails_benchmark'] else 'ahead'}")
@@ -160,7 +197,19 @@ def _main(argv=None):
                 benchmark = sum(moves) / len(moves)
     except Exception:
         pass
-    print(render(metrics(equity=equity, benchmark_pct=benchmark)))
+    account_pct = None
+    try:
+        # The time-weighted figure needs an equity curve, which dashboard owns.
+        # Imported here, not at module scope: dashboard imports this file.
+        from . import dashboard, ledger
+        flows = cashflow.load()
+        curve = dashboard.equity_curve(history, ledger.load(), flows=flows)
+        if curve:
+            account_pct = cashflow.twr(curve)
+    except Exception:
+        pass
+    print(render(metrics(equity=equity, benchmark_pct=benchmark,
+                         account_pct=account_pct)))
     return 0
 
 

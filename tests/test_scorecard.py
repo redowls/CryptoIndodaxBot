@@ -111,3 +111,42 @@ def test_empty_ledger_does_not_divide_by_zero():
     m = scorecard.metrics({"closed": []}, now=DUE)
     assert m["trades"] == 0 and m["true_win_pct"] == 0.0
     assert m["verdict"] == "COLLECTING"
+
+
+# --- deposits -------------------------------------------------------------
+
+def test_a_deposit_raises_contributed_capital_instead_of_the_return():
+    led = {"open": [], "closed": []}
+    m = scorecard.metrics(led, equity=scorecard.START_EQUITY + 500_000.0,
+                          deposits=500_000.0)
+    assert m["invested_capital"] == scorecard.START_EQUITY + 500_000.0
+    assert m["net_pnl"] == 0.0
+    assert m["account_pct"] == 0.0          # the old arithmetic said +99.8
+
+
+def test_the_criterion_reads_a_loss_as_a_loss_once_the_top_up_is_known():
+    """The live case: Rp500.823 in, Rp8.696 down, benchmark +23.3%."""
+    m = scorecard.metrics({"open": [], "closed": []},
+                          equity=992_988.0, benchmark_pct=23.3, deposits=500_823.0)
+    assert m["net_pnl"] < 0
+    assert m["trails_benchmark"] is True
+
+
+def test_a_supplied_time_weighted_figure_is_used_and_says_so():
+    m = scorecard.metrics({"open": [], "closed": []}, equity=1_000_000.0,
+                          deposits=500_000.0, account_pct=3.69)
+    assert (m["account_pct"], m["account_pct_method"]) == (3.69, "time-weighted")
+    assert m["roi_pct"] is not None         # the money-weighted view stays visible
+
+
+def test_without_a_curve_it_falls_back_to_simple_return_and_labels_it():
+    m = scorecard.metrics({"open": [], "closed": []}, equity=1_000_000.0,
+                          deposits=500_000.0)
+    assert m["account_pct_method"] == "simple"
+
+
+def test_the_rendered_scorecard_names_the_deposit():
+    m = scorecard.metrics({"open": [], "closed": []}, equity=1_000_000.0,
+                          deposits=500_823.0)
+    text = scorecard.render(m)
+    assert "deposits" in text and "capital, not profit" in text
