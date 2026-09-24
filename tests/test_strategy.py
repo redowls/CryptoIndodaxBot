@@ -379,28 +379,35 @@ def test_floor_never_lowers_a_stop(monkeypatch):
 
 
 def test_floor_turns_the_fartcoin_loss_into_a_scratch(monkeypatch):
-    """Regression for the real trade. Entry 3462, initial stop 3158.66
+    """Regression for the real trade. Entry 3462, initial stop 3158.665
     (1R = 303.34 = 8.76% of price), peak 3779 = +1.04R, ATR ~107.
 
-    Without the floor the trail sits 1.42R under the peak, i.e. BELOW entry,
-    and the position exited at -0.39R (-Rp3.516). With it, the stop cannot go
-    under the entry once +1R has printed."""
-    pos = {"symbol": "FARTCOIN", "qty": 25.42, "entry_price": 3462.0,
-           "initial_stop": 3158.665, "stop": 3158.665, "high_water": 3462.0}
-    bars = [(3779.0, 107.0), (3600.0, 107.0), (3450.0, 107.0)]
-    monkeypatch.setattr(config, "BREAKEVEN_AT_R", None)
-    p = dict(pos)
-    for i, (c, a) in enumerate(bars):
-        act, p = strategy.check_exit(p, _tf(close=c, atr=a), "neutral", i + 1)
-        if act:
-            break
-    assert act == "stop" and p["stop"] < 3462.0, "the armed trail is under water"
+    Without the floor the trail settles 1.42R under the peak, which is BELOW
+    the entry, and the position exited at -0.39R (-Rp3.516) after being up
+    double digits. With the floor the stop LEVEL cannot go under the entry once
+    +1R has printed — note the FILL can still be lower, since a level is not a
+    guaranteed price, which is why the harness gain is about Rp2.700 and not
+    the full Rp3.516."""
+    base = {"symbol": "FARTCOIN", "qty": 25.42, "entry_price": 3462.0,
+            "initial_stop": 3158.665, "stop": 3158.665, "high_water": 3462.0}
+    bars = [(3779.0, 107.0), (3600.0, 107.0), (3450.0, 107.0), (3345.0, 107.0)]
 
-    monkeypatch.setattr(config, "BREAKEVEN_AT_R", 1.0)
-    monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", True)
-    q = dict(pos)
-    for i, (c, a) in enumerate(bars):
-        act2, q = strategy.check_exit(q, _tf(close=c, atr=a), "neutral", i + 1)
-        if act2:
-            break
-    assert q["stop"] >= 3462.0, "the floor must hold the stop at or above entry"
+    def run(floor):
+        monkeypatch.setattr(config, "BREAKEVEN_AT_R", floor)
+        monkeypatch.setattr(config, "BREAKEVEN_INCLUDES_FEES", True)
+        pos = dict(base)
+        for i, (c, a) in enumerate(bars):
+            action, pos = strategy.check_exit(pos, _tf(close=c, atr=a), "neutral", i + 1)
+            if action:
+                return action, c, pos
+        return None, None, pos
+
+    act, px, pos = run(None)
+    assert act == "stop"
+    assert pos["stop"] < base["entry_price"], "the armed trail is under water"
+    assert px < base["entry_price"]
+
+    act2, px2, pos2 = run(1.0)
+    assert act2 == "stop"
+    assert pos2["stop"] >= base["entry_price"], "the floor holds the stop at or above entry"
+    assert px2 > px, "and it gets out earlier, before the deeper bar"
