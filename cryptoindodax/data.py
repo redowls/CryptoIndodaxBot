@@ -9,6 +9,14 @@ crypto bars in three ways that matter:
   2. Bars come back as {"Time","Open","High","Low","Close","Volume"} with Time in
      unix seconds and Volume as a *string*.
   3. A request with no User-Agent is answered with 403 by their edge.
+  4. A range ending "now" includes the bar for the hour still in progress, whose
+     Close is just the price at the moment of the request. Reading that as "the
+     last close" turns every decision into a single point sample taken minutes
+     past the hour. On 2026-09-24 LINK's 18:00 bar CLOSED at +5,40% from entry
+     and the bot recorded +0,96%, because it had looked at 18:07 and never
+     again — so the profit ladder's +5% rung never armed and a stop that should
+     have been sitting at +2,5% stayed at -6,60%. `fetch_bars` therefore drops
+     the forming bar unless a caller explicitly asks for it.
 
 `fetch_bars` normalises the payload to Alpaca's {"t","o","h","l","c","v"} shape
 so indicators/snapshot/digest/strategy port over untouched.
@@ -23,6 +31,41 @@ from . import config, net
 
 class FetchError(Exception):
     pass
+
+
+# Indodax tf code -> bar length in seconds. Used only to recognise the bar that
+# has not finished yet; a code missing from here is left alone rather than
+# guessed at, so an unknown timeframe degrades to the old behaviour.
+PERIOD_SECONDS = {"60": 3600, "240": 14400, "1D": 86400}
+
+
+def _bar_epoch(bar):
+    """Bar time as unix seconds, or None when it cannot be read."""
+    try:
+        return int(datetime.fromisoformat(bar["t"]).timestamp())
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def drop_forming_bar(bars, timeframe, now=None):
+    """Bars up to the last COMPLETED period.
+
+    The current period's bar is not a close, it is a snapshot of a price still
+    moving. Indicators computed over it are computed over a partial sample, and
+    a peak read off it is whatever the price happened to be when the cron fired.
+    """
+    secs = PERIOD_SECONDS.get(str(timeframe))
+    if not secs or not bars:
+        return bars
+    stamps = [_bar_epoch(b) for b in bars]
+    if any(t is None for t in stamps):
+        # Undateable bars cannot be judged, and this runs on the snapshot path:
+        # losing a coin's whole 1H block over one odd timestamp would cost more
+        # than keeping a bar that may still be forming.
+        return bars
+    epoch = int((now or datetime.now(timezone.utc)).timestamp())
+    cutoff = epoch - (epoch % secs)
+    return [b for b, t in zip(bars, stamps) if t < cutoff]
 
 
 if config.FORCE_IPV4:
@@ -52,12 +95,21 @@ def normalize_bar(raw):
     }
 
 
-def fetch_bars(pair: str, timeframe: str, start=None, end=None, session=None):
+def fetch_bars(pair: str, timeframe: str, start=None, end=None, session=None,
+               include_partial=True, now=None):
     """Fetch OHLCV bars for one symbol/timeframe. Returns list (possibly empty).
 
     `pair` is the chart symbol ("BTCIDR"); `timeframe` is an Indodax tf code
     ("60", "240", "1D"). `start`/`end` accept unix seconds, datetimes or ISO
     strings; `end` defaults to now.
+
+    The forming bar IS included by default, because that is what 24 days of live
+    trading was measured on and a backtest of the alternative did not support
+    changing it (replay --bars arm B: 27 trades +Rp15.446 became 31 trades
+    -Rp10.998 — though that arm recomputed its indicators from refetched bars,
+    so it is inconclusive rather than damning). Pass `include_partial=False`, or
+    call `drop_forming_bar`, where a finished period is what the question needs —
+    a peak, for instance, which is what `snapshot` does.
     """
     to_ts = _to_epoch(end) or int(time.time())
     from_ts = _to_epoch(start)
@@ -81,7 +133,7 @@ def fetch_bars(pair: str, timeframe: str, start=None, end=None, session=None):
             out.append(normalize_bar(raw))
         except (KeyError, TypeError, ValueError):
             continue  # skip malformed bar rather than lose the whole series
-    return out
+    return out if include_partial else drop_forming_bar(out, timeframe, now=now)
 
 
 def fetch_tickers(session=None):

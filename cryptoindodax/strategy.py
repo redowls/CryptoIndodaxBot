@@ -195,7 +195,17 @@ def check_exit(position, h1, reg, hours_held):
     pos = dict(position)
     close, atr = h1["last_close"], h1.get("atr14")
     r = pos["entry_price"] - pos["initial_stop"]
-    pos["high_water"] = max(pos.get("high_water", pos["entry_price"]), close)
+    # The peak may be ratcheted off `high_1h` — the high of the last COMPLETED
+    # hour — where the snapshot supplies one. A close is one price out of an
+    # hour's trading; on 2026-09-24 LINK's 18:00 hour reached +5,40% from entry
+    # and the reading taken at 18:07 said +0,96%, so the ladder's +5% rung never
+    # armed. A bar high is a price the market genuinely traded at, which is the
+    # only honest basis for "the best this trade has been". Absent the field
+    # nothing changes, so a snapshot that predates it replays identically.
+    peak_price = close
+    if config.PEAK_FROM_BAR_HIGH:
+        peak_price = max(close, h1.get("high_1h") or 0.0)
+    pos["high_water"] = max(pos.get("high_water", pos["entry_price"]), peak_price)
     if atr and close - pos["entry_price"] >= r:
         mult = config.RISK_OFF_TRAIL_ATR_MULT if reg == "risk_off" else config.TRAIL_ATR_MULT
         pos["stop"] = max(pos["stop"], pos["high_water"] - mult * atr)

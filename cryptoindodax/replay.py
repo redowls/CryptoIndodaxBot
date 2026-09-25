@@ -49,7 +49,7 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
-from . import config, ledger, regime_lab, risk, scorecard, strategy
+from . import config, data, ledger, regime_lab, risk, scorecard, snapshot, strategy
 
 
 # --- history --------------------------------------------------------------
@@ -351,6 +351,11 @@ def main(argv=None):
     p.add_argument("--ladder", action="store_true",
                    help="score the pre-declared profit-lock ladder variants, plus "
                         "flat-percent comparison rows, on bull/bear/full windows")
+    p.add_argument("--bars", action="store_true",
+                   help="refetch real 1H bars and replay the history twice: as it ran "
+                        "(forming bar) and with only completed bars")
+    p.add_argument("--warmup", type=int, default=12,
+                   help="days of bars fetched before the window, for indicator warmup")
     p.add_argument("--validate", action="store_true",
                    help="replay 2026-09-07T17:00 onward with the historical policy and "
                         "compare entries against the live ledger")
@@ -360,6 +365,8 @@ def main(argv=None):
         return _regime_lab(args)
     if args.ladder:
         return _ladder_lab(args)
+    if args.bars:
+        return _bar_lab(args)
     if args.validate:
         return _validate()
 
@@ -546,6 +553,199 @@ def _ladder_lab(args):
 
 
 VALIDATE_FROM = "2026-09-07T17:00:00+00:00"
+
+
+# --- the forming-bar lab --------------------------------------------------
+#
+# Until 2026-09-25 the snapshot read Indodax with `to=now`, so the last bar it
+# received was the hour still in progress and its "close" was the price at :07.
+# Every decision — indicators, peak tracking, the profit ladder's rungs — was
+# therefore made on one point sample per hour. LINK's 18:00 bar on 2026-09-24
+# CLOSED at +5,40% from entry while the bot recorded +0,96%.
+#
+# The stored snapshots cannot show what the fix would have done, because they
+# only ever contained those point samples. So this rebuilds the entire history
+# from real bars refetched from Indodax, using only COMPLETED bars, and replays
+# both through the same engines.
+
+BAR_CHUNK_HOURS = 160          # Indodax caps a 1H range at ~168 bars
+SYNTH_LOOKBACK = 260           # bars fed to the indicators per synthetic point
+
+
+BAR_CACHE = config.ROOT / "data" / "barcache.json"
+
+
+def fetch_bar_history(symbols, start, end, timeframe=None, sleep=0.25, fetch=None,
+                      cache=BAR_CACHE):
+    """{symbol: [bars]} refetched from Indodax, chunked around its range cap.
+
+    Cached on disk keyed by symbol and window, because the whole point of this
+    lab is re-running it against variants and Indodax caps a 1H request at ~168
+    bars — a full refetch is ~120 requests.
+    """
+    import time as _time
+    key = f"{timeframe or config.TIMEFRAMES['1H']}|{start.isoformat()}|{end.isoformat()}"
+    if cache:
+        try:
+            blob = json.loads(cache.read_text())
+            if blob.get("key") == key and set(blob.get("bars", {})) >= set(symbols):
+                print(f"  (cached {cache.name})", flush=True)
+                return {s: blob["bars"][s] for s in symbols}
+        except (OSError, ValueError):
+            pass
+    timeframe = timeframe or config.TIMEFRAMES["1H"]
+    fetch = fetch or data.fetch_bars
+    out = {}
+    for sym in symbols:
+        seen, cursor = {}, start
+        while cursor < end:
+            stop = min(cursor + timedelta(hours=BAR_CHUNK_HOURS), end)
+            try:
+                for bar in fetch(config.pair(sym), timeframe, start=cursor, end=stop):
+                    seen[bar["t"]] = bar          # dedupe overlapping chunks
+            except data.FetchError as e:
+                print(f"  {sym}: {e}", flush=True)
+            cursor = stop
+            if sleep:
+                _time.sleep(sleep)
+        out[sym] = [seen[k] for k in sorted(seen)]
+        print(f"  {sym}: {len(out[sym])} bars", flush=True)
+    if cache:
+        try:
+            cache.write_text(json.dumps({"key": key, "bars": out}))
+        except OSError:
+            pass
+    return out
+
+
+def _floor_hour(when):
+    return when.replace(minute=0, second=0, microsecond=0)
+
+
+def synth_history(history, bars_by_sym, lookback=SYNTH_LOOKBACK):
+    """Rebuild the snapshot history from completed bars only.
+
+    Same capture times and the same per-hour symbol list as the real history, so
+    the two arms differ in exactly one thing: which bar the indicators and the
+    close were taken from. A coin the original snapshot did not price is not
+    priced here either — adding coverage the bot never had would flatter the fix.
+    """
+    out = []
+    index = {sym: [(datetime.fromisoformat(b["t"]), b) for b in bars]
+             for sym, bars in bars_by_sym.items()}
+    for when, snap in history:
+        cutoff = _floor_hour(when)
+        symbols = []
+        for coin in snap.get("symbols", []):
+            sym = coin.get("symbol")
+            had_price = coin.get("timeframes", {}).get("1H", {}).get("status") == "ok"
+            bars = [b for t, b in index.get(sym, []) if t < cutoff][-lookback:]
+            ind = snapshot.compute_for_bars(bars) if (had_price and bars) else None
+            tf = {"status": "ok", **ind} if ind else {"status": "no_data"}
+            symbols.append({"symbol": sym, "pair": coin.get("pair"),
+                            "status": "ok", "timeframes": {"1H": tf}})
+        out.append((when, {"captured_at": when.isoformat(), "symbols": symbols}))
+    return out
+
+
+def lag_history(history):
+    """The stored history, each hour showing the PREVIOUS hour's reading.
+
+    The control arm. Dropping the forming bar does two things at once: it makes
+    the indicators honest, and it makes every decision up to an hour older. This
+    isolates the second effect using the real recorded data, so a difference
+    between the arms cannot be blamed on refetched bars being subtly unlike what
+    the bot originally saw.
+    """
+    out = []
+    for i, (when, snap) in enumerate(history):
+        source = history[i - 1][1] if i else snap
+        out.append((when, {"captured_at": when.isoformat(),
+                           "symbols": source.get("symbols", [])}))
+    return out
+
+
+def high_history(history, bars_by_sym):
+    """The stored history untouched, plus each coin's last COMPLETED hour high.
+
+    The surgical variant. Arm B changed what every decision was made on, which
+    reshuffles which trades get taken and drowns the thing being fixed. This
+    changes nothing a decision reads — entries, stops and take-profits still see
+    the same :07 price the bot actually saw — and adds one field the ladder can
+    ratchet its peak from. A bar high is a price the market genuinely traded at,
+    so a rung armed off it is armed off a peak that really happened.
+    """
+    out = []
+    index = {sym: [(datetime.fromisoformat(b["t"]), b) for b in bars]
+             for sym, bars in bars_by_sym.items()}
+    for when, snap in history:
+        cutoff = _floor_hour(when)
+        symbols = []
+        for coin in snap.get("symbols", []):
+            coin = json.loads(json.dumps(coin))
+            tf = coin.get("timeframes", {}).get("1H", {})
+            if tf.get("status") == "ok":
+                past = [b for t, b in index.get(coin["symbol"], []) if t < cutoff]
+                if past:
+                    tf["high_1h"] = past[-1]["h"]
+            symbols.append(coin)
+        out.append((when, {"captured_at": when.isoformat(), "symbols": symbols}))
+    return out
+
+
+def _trade_key(t):
+    return (t["symbol"], t["entry_time"][:13])
+
+
+def _bar_lab(args):
+    hist = load_history()
+    if not hist:
+        print("no snapshot history")
+        return 1
+    symbols = sorted({c["symbol"] for _, s in hist for c in s.get("symbols", [])})
+    start = hist[0][0] - timedelta(days=int(args.warmup))
+    end = hist[-1][0] + timedelta(hours=1)
+    print(_header())
+    print(f"refetching real 1H bars for {len(symbols)} symbols, "
+          f"{start.date()} -> {end.date()}", flush=True)
+    bars = fetch_bar_history(symbols, start, end)
+
+    print("\nrebuilding the history from completed bars only...", flush=True)
+    synth = synth_history(hist, bars)
+
+    kw = dict(use_policy_history=True)
+    live = run(history=hist, **kw)
+    fixed = run(history=synth, **kw)
+    lagged = run(history=lag_history(hist), **kw)
+    peaked = run(history=high_history(hist, bars), **kw)
+
+    print("\n" + _header())
+    print(_fmt("A as-run (forming bar, :07)", summarize(live)))
+    print(_fmt("B completed bars", summarize(fixed)))
+    print(_fmt("C control: same data, 1h late", summarize(lagged)))
+    print(_fmt("D peak from bar high only", summarize(peaked)))
+    print("\nB changes the data AND delays every decision by up to an hour."
+          "\nC delays the same recorded data without changing it, so B-minus-C is"
+          "\nwhat the cleaner bar actually bought.")
+
+    a = {_trade_key(t): t for t in live["trades"]}
+    b = {_trade_key(t): t for t in fixed["trades"]}
+    print(f"\ntrades: as-run {len(a)}, fixed {len(b)}, "
+          f"shared {len(set(a) & set(b))}")
+    print("\n--- trades the two arms score differently ---")
+    print(f"{'trade':22} {'as-run':>22}   {'fixed':>22}")
+    for key in sorted(set(a) | set(b)):
+        ta, tb = a.get(key), b.get(key)
+        if ta and tb and ta["reason"] == tb["reason"] \
+                and abs((ta.get("pnl") or 0) - (tb.get("pnl") or 0)) < 1:
+            continue
+        def cell(t):
+            if not t:
+                return "— not taken —"
+            return (f"{t['reason']:<5} {config.fmt_idr(t.get('pnl') or 0):>10}"
+                    f" {t.get('r_multiple') or 0:+.2f}R")
+        print(f"{key[0] + ' ' + key[1][5:]:22} {cell(ta):>22}   {cell(tb):>22}")
+    return 0
 
 
 def _validate():

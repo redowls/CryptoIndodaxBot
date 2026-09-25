@@ -168,3 +168,15 @@ def test_ladder_variants_are_pre_declared_and_legal():
     rung_sets = [r for _, r in replay.LADDER_VARIANTS]
     assert () in rung_sets
     assert [r for r in rung_sets if r and r[0][0] < 1.5] == [((1.0, 2.0),)]
+
+
+def test_the_lag_control_shows_each_hour_the_previous_hours_reading():
+    """The control that separates "cleaner bar" from "one hour later"."""
+    hist = [(datetime(2026, 9, 1, h, tzinfo=timezone.utc),
+             {"captured_at": f"2026-09-01T{h:02d}:07:00+00:00",
+              "symbols": [{"symbol": "BTC",
+                           "timeframes": {"1H": {"status": "ok", "last_close": 100 + h}}}]})
+            for h in range(3)]
+    lagged = replay.lag_history(hist)
+    assert [replay._closes(s)["BTC"] for _, s in lagged] == [100, 100, 101]
+    assert [w for w, _ in lagged] == [w for w, _ in hist]

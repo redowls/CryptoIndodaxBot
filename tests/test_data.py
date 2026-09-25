@@ -148,3 +148,67 @@ def test_watchlist_contains_btc_for_the_regime_gate():
     regime() falls back to 'neutral', and the ADX entry bar silently rises
     from 25 to 30 across the board."""
     assert "BTC" in config.WATCHLIST
+
+
+# --- the forming bar ------------------------------------------------------
+#
+# Reading the hour still in progress as "the last close" turned every decision
+# into a point sample taken minutes past the hour. LINK's 18:00 bar on
+# 2026-09-24 closed at +5,40% from entry; the bot recorded +0,96% and its
+# profit-ladder rung never armed.
+
+def _raw(hour, close, day=24):
+    ts = int(datetime(2026, 9, day, hour, tzinfo=timezone.utc).timestamp())
+    return {"Time": ts, "Open": close, "High": close, "Low": close,
+            "Close": close, "Volume": "1"}
+
+
+NOW = datetime(2026, 9, 24, 18, 7, tzinfo=timezone.utc)
+
+
+def test_the_hour_still_running_is_not_a_close():
+    bars = [data.normalize_bar(_raw(16, 100)), data.normalize_bar(_raw(17, 110)),
+            data.normalize_bar(_raw(18, 120))]
+    kept = data.drop_forming_bar(bars, "60", now=NOW)
+    assert [b["c"] for b in kept] == [100, 110]
+
+
+def test_a_finished_hour_survives_even_seconds_after_it_closed():
+    bars = [data.normalize_bar(_raw(17, 110))]
+    just_after = datetime(2026, 9, 24, 18, 0, 1, tzinfo=timezone.utc)
+    assert len(data.drop_forming_bar(bars, "60", now=just_after)) == 1
+
+
+def test_four_hour_bars_use_their_own_period_not_the_hour():
+    bars = [data.normalize_bar(_raw(8, 100)), data.normalize_bar(_raw(12, 110)),
+            data.normalize_bar(_raw(16, 120))]
+    kept = data.drop_forming_bar(bars, "240", now=NOW)   # 16:00 bar runs to 20:00
+    assert [b["c"] for b in kept] == [100, 110]
+
+
+def test_an_unknown_timeframe_is_left_alone_rather_than_guessed_at():
+    bars = [data.normalize_bar(_raw(18, 120))]
+    assert data.drop_forming_bar(bars, "7m", now=NOW) == bars
+
+
+def test_fetch_bars_keeps_the_forming_bar_unless_asked_to_drop_it():
+    """The live default, unchanged: 24 days of trading was measured on it and the
+    backtest of the alternative (replay --bars arm B) did not support a change."""
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return [_raw(16, 100), _raw(17, 110), _raw(18, 120)]
+
+    class _S:
+        def get(self, *a, **k): return _R()
+
+    whole = data.fetch_bars("LINKIDR", "60", session=_S(), now=NOW)
+    assert [b["c"] for b in whole] == [100, 110, 120]
+    kept = data.fetch_bars("LINKIDR", "60", session=_S(), now=NOW, include_partial=False)
+    assert [b["c"] for b in kept] == [100, 110]
+
+
+def test_bars_with_unreadable_timestamps_are_kept_rather_than_lost():
+    """This runs on the snapshot path; one odd bar must not cost a coin's hour."""
+    bars = [{"o": 1, "h": 2, "l": 1, "c": 1, "v": 1, "t": "t0"}]
+    assert data.drop_forming_bar(bars, "60", now=NOW) == bars

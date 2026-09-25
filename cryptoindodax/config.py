@@ -306,6 +306,17 @@ BREAKEVEN_INCLUDES_FEES = True
 # win rate by loosening these rungs.
 #
 # () turns it off.
+# Ratchet the ladder's peak off the last COMPLETED hour's high (snapshot field
+# `high_1h`) as well as the close. A close is one price out of an hour, sampled
+# whenever the cron fired; a high is a price the market actually traded at.
+# Shipped 2026-09-25 after LINK's 18:00 hour on 09-24 reached +5,40% from entry
+# while the :07 reading said +0,96%, leaving a stop at -6,60% that the ladder's
+# own rule puts at +2,5%. Measured on the full history with the real engines
+# (replay --bars): +Rp15.446 -> +Rp26.565, 9.91R -> 12.12R, PF 1.29 -> 1.43,
+# stop rate 48.1% -> 41.9%. Nothing an entry reads changes, so this cannot
+# reshuffle which coins are bought.
+PEAK_FROM_BAR_HIGH = True
+
 PROFIT_LOCK_PCT_RUNGS = ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0))
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries

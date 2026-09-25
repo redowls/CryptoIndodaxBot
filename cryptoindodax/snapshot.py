@@ -31,6 +31,21 @@ def compute_for_bars(bars):
     }
 
 
+def _completed_high(bars, timeframe, now=None):
+    """High of the last FINISHED bar, or None.
+
+    The close is one price out of a whole period, sampled whenever the cron fired.
+    On 2026-09-24 LINK's 18:00 hour reached +5,40% from entry and the reading
+    taken at 18:07 said +0,96%, so the profit ladder's +5% rung never armed and a
+    stop that should have moved to +2,5% stayed at -6,60%. A bar high is a price
+    the market actually traded at, which is the only honest basis for "the best
+    this trade has been" — and it is recorded ALONGSIDE the close rather than
+    instead of it, so every decision still reads the fresh price it always did.
+    """
+    closed = data.drop_forming_bar(bars, timeframe, now=now)
+    return closed[-1]["h"] if closed else None
+
+
 def snapshot_symbol(sym):
     pair = config.pair(sym)
     out = {"symbol": sym, "pair": pair, "status": "ok", "timeframes": {}}
@@ -41,7 +56,9 @@ def snapshot_symbol(sym):
             if ind is None:
                 out["timeframes"][tf_key] = {"status": "no_data"}
             else:
-                out["timeframes"][tf_key] = {"status": "ok", **ind}
+                high = _completed_high(bars, tf_api)
+                out["timeframes"][tf_key] = {"status": "ok", **ind,
+                                             **({"high_1h": high} if high else {})}
         except Exception as e:
             out["status"] = "partial"
             out["timeframes"][tf_key] = {"status": "error", "error": str(e)}

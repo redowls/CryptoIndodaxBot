@@ -522,3 +522,44 @@ def test_mog_and_fartcoin_regression():
     assert strategy.profit_lock_pct_level(3462.0, 3779.0) == pytest.approx(3462.0 * 1.025)
     # BTC on the same day peaked +2.38% — the ladder never arms on a major
     assert strategy.profit_lock_pct_level(1_513_998_000.0, 1_550_000_000.0) is None
+
+
+# --- the peak, read off a real traded high --------------------------------
+
+def test_the_peak_ratchets_off_the_bar_high_when_one_is_supplied():
+    """LINK 2026-09-24: the 18:00 hour reached +5,40% and the 18:07 reading said
+    +0,96%, so the ladder's +5% rung never armed on a peak that really happened."""
+    pos = {"symbol": "LINK", "qty": 1.0, "entry_price": 100.0, "initial_stop": 94.0,
+           "stop": 94.0, "high_water": 100.0}
+    h1 = {"last_close": 101.0, "high_1h": 106.0, "atr14": 2.0}
+    _, updated = strategy.check_exit(pos, h1, "risk_on", 1.0)
+    assert updated["high_water"] == 106.0
+    assert updated["lock"] == pytest.approx(102.5)      # the +5% rung's +2,5% stop
+
+
+def test_a_snapshot_without_the_high_field_replays_exactly_as_before():
+    """Every stored snapshot predates the field; none may change behaviour."""
+    pos = {"symbol": "LINK", "qty": 1.0, "entry_price": 100.0, "initial_stop": 94.0,
+           "stop": 94.0, "high_water": 100.0}
+    _, updated = strategy.check_exit(dict(pos), {"last_close": 101.0, "atr14": 2.0},
+                                     "risk_on", 1.0)
+    assert updated["high_water"] == 101.0
+    assert updated.get("lock") is None
+
+
+def test_a_bar_high_below_the_close_cannot_lower_the_peak():
+    pos = {"symbol": "LINK", "qty": 1.0, "entry_price": 100.0, "initial_stop": 94.0,
+           "stop": 94.0, "high_water": 108.0}
+    _, updated = strategy.check_exit(pos, {"last_close": 103.0, "high_1h": 99.0,
+                                           "atr14": 2.0}, "risk_on", 1.0)
+    assert updated["high_water"] == 108.0
+
+
+def test_the_bar_high_peak_can_be_switched_off_and_the_old_behaviour_returns(monkeypatch):
+    """It is registered exit geometry, so it must be revertible without a code edit."""
+    monkeypatch.setattr(config, "PEAK_FROM_BAR_HIGH", False)
+    pos = {"symbol": "LINK", "qty": 1.0, "entry_price": 100.0, "initial_stop": 94.0,
+           "stop": 94.0, "high_water": 100.0}
+    h1 = {"last_close": 101.0, "high_1h": 106.0, "atr14": 2.0}
+    _, updated = strategy.check_exit(pos, h1, "risk_on", 1.0)
+    assert updated["high_water"] == 101.0

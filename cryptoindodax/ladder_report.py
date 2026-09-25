@@ -30,6 +30,7 @@ REGISTERED = {
     "PROFIT_LOCK_PCT_RUNGS": ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0)),
     "PROFIT_LOCK_RUNGS": ((1.5, 1.0),),
     "BREAKEVEN_AT_R": None,
+    "PEAK_FROM_BAR_HIGH": True,
     "TP_R": 2.5,
     "STOP_ATR_MULT": 3.0,
     "TRAIL_ATR_MULT": 4.0,
