@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from cryptoindodax import config, ledger, policy, risk
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
@@ -221,3 +223,48 @@ def test_reconcile_skips_balance_with_no_mark_price(tmp_path):
                "avg_entry_price": None}], now=NOW)
     assert led["open"] == []
     assert any("no price" in n for n in notes)
+
+
+# --- sizing against cash, not just equity ---------------------------------
+#
+# 2026-09-26: FARTCOIN was rejected by Indodax with [-2010] Insufficient
+# balance. Equity was Rp1.030.414 so the notional cap was Rp206.083, but only
+# Rp203.739 in cash existed — the other Rp826.675 was the four open coins. The
+# cap was 1,15% above the money that could pay for it. This is structural, not a
+# fluke: as open positions appreciate, equity/MAX_POSITIONS drifts above cash,
+# so the LAST slot is always the one that fails.
+
+def test_the_notional_never_exceeds_the_cash_that_exists():
+    qty, _, _ = risk.position_size(1_030_414.0, 100.0, 1.0, cash=203_739.0)
+    assert qty * 100.0 <= 203_739.0
+
+
+def test_the_live_failure_would_now_size_down_instead_of_being_rejected():
+    equity, cash = 1_030_414.0, 203_739.0
+    uncapped, _, _ = risk.position_size(equity, 100.0, 1.0)
+    capped, _, _ = risk.position_size(equity, 100.0, 1.0, cash=cash)
+    assert uncapped * 100.0 > cash          # what was sent, and refused
+    assert capped * 100.0 < cash            # what would be sent now
+
+
+def test_a_buffer_is_left_unspent_for_the_fee_and_for_drift():
+    qty, _, _ = risk.position_size(10_000_000.0, 100.0, 1.0, cash=100_000.0)
+    assert qty * 100.0 == pytest.approx(
+        100_000.0 * (1 - config.ENTRY_CASH_BUFFER_PCT / 100.0))
+
+
+def test_plenty_of_cash_leaves_the_equity_cap_in_charge():
+    rich, _, _ = risk.position_size(1_000_000.0, 100.0, 1.0, cash=999_999_999.0)
+    plain, _, _ = risk.position_size(1_000_000.0, 100.0, 1.0)
+    assert rich == plain
+
+
+def test_no_cash_means_unsizable_and_says_so():
+    qty, _, _ = risk.position_size(1_000_000.0, 100.0, 1.0, cash=0.0)
+    assert qty == 0.0
+    assert "no spendable cash" in risk.sizing_reason(1_000_000.0, 100.0, 1.0, cash=0.0)
+
+
+def test_omitting_cash_keeps_the_old_behaviour_exactly():
+    """Every caller that cannot know the balance must size as it always did."""
+    assert risk.position_size(1_000_000.0, 100.0, 1.0)[0] > 0

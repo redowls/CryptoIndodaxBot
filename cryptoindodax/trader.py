@@ -132,13 +132,15 @@ def _exit_position(led, pos, price_hint, reason, dry_run, positions_by_sym):
     return trade
 
 
-def _enter_position(led, sym, coin, equity, reg, dry_run):
+def _enter_position(led, sym, coin, equity, reg, dry_run, cash=None):
     h1 = coin["timeframes"]["1H"]
     price, atr = h1["last_close"], h1["atr14"]
     qty, stop, risk_idr = risk.position_size(equity, price, atr,
-                                             half=(reg == "risk_off"), symbol=sym)
+                                             half=(reg == "risk_off"), symbol=sym,
+                                             cash=cash)
     if qty <= 0:
-        log(f"entry {sym}: unsizable — {risk.sizing_reason(equity, price, atr, sym)}")
+        log(f"entry {sym}: unsizable — "
+            f"{risk.sizing_reason(equity, price, atr, sym, cash=cash)}")
         return None
     notional = qty * price
     if dry_run:
@@ -146,10 +148,14 @@ def _enter_position(led, sym, coin, equity, reg, dry_run):
             f"(notional {config.fmt_idr(notional)}), stop {config.fmt_idr(stop)}, "
             f"risk {config.fmt_idr(risk_idr)}")
         return None
-    ledger.record_entry_attempt(led, sym)
     try:
         # A market BUY on Indodax is sized in rupiah, not coin.
         order_id = broker.market_buy_idr(sym, int(notional))
+        # The throttle is recorded only once an order EXISTS. It is there to stop
+        # the bot re-entering a coin it just left, and a rejected order is not an
+        # entry — recording it anyway burned FARTCOIN for 24 hours on 2026-09-26
+        # over a balance check that failed before the exchange saw a trade.
+        ledger.record_entry_attempt(led, sym)
         status, fill_price, filled_qty = broker.wait_for_fill(sym, order_id)
     except broker.BrokerError as e:
         log(f"entry {sym}: order FAILED ({e})")
@@ -307,7 +313,8 @@ def _run(dry_run=False, now=None):
             if ledger.throttled(led, sym, now=now):
                 log(f"reject {sym}: re-entry throttle (24h)")
                 continue
-            if _enter_position(led, sym, coin, equity, reg, dry_run) or dry_run:
+            if _enter_position(led, sym, coin, equity, reg, dry_run,
+                               cash=acct["cash"] if have_keys else None) or dry_run:
                 entered += 1
         if not candidates:
             log("no entry candidates this hour")

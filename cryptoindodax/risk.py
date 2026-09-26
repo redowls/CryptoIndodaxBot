@@ -13,10 +13,17 @@ from datetime import datetime, timedelta, timezone
 from . import config, pairs
 
 
-def position_size(equity, entry_price, atr, half=False, symbol=None):
+def position_size(equity, entry_price, atr, half=False, symbol=None, cash=None):
     """Risk RISK_PCT of equity with a STOP_ATR_MULT*ATR stop.
 
     Returns (qty, initial_stop, risk_idr) or (0, None, 0) if unsizable.
+
+    `cash` is the spendable IDR balance. The notional cap is a share of EQUITY,
+    which counts coins already held — so as open positions appreciate, equity
+    divided by MAX_POSITIONS drifts above the cash that actually exists and the
+    order is rejected by the exchange rather than sized down. That is not a rare
+    edge: the last slot is always the one that hits it. Passing `cash` clips the
+    notional to what can be paid for, less ENTRY_CASH_BUFFER_PCT.
     """
     if not atr or atr <= 0 or not entry_price or entry_price <= 0 or equity <= 0:
         return 0.0, None, 0.0
@@ -27,8 +34,12 @@ def position_size(equity, entry_price, atr, half=False, symbol=None):
     if half:
         risk_idr /= 2
     qty = risk_idr / stop_dist
-    # never exceed the cash a single position may use (cap notional at 1/MAX_POSITIONS)
+    # never exceed the share of equity a single position may use...
     max_notional = equity / config.MAX_POSITIONS
+    # ...nor the cash that is actually there to pay for it
+    if cash is not None:
+        max_notional = min(max_notional,
+                           max(0.0, cash) * (1 - config.ENTRY_CASH_BUFFER_PCT / 100.0))
     if qty * entry_price > max_notional:
         qty = max_notional / entry_price
     if symbol:
@@ -43,7 +54,7 @@ def position_size(equity, entry_price, atr, half=False, symbol=None):
     return qty, entry_price - stop_dist, risk_idr
 
 
-def sizing_reason(equity, entry_price, atr, symbol=None):
+def sizing_reason(equity, entry_price, atr, symbol=None, cash=None):
     """Human-readable explanation for a refused size (logging only)."""
     if not atr or atr <= 0:
         return "no ATR"
@@ -51,10 +62,16 @@ def sizing_reason(equity, entry_price, atr, symbol=None):
         return "no price"
     if equity <= 0:
         return "no equity"
+    if cash is not None and cash * (1 - config.ENTRY_CASH_BUFFER_PCT / 100.0) <= 0:
+        return f"no spendable cash ({config.fmt_idr(cash)})"
     if config.STOP_ATR_MULT * atr >= entry_price:
         return "stop distance exceeds price"
     if symbol:
-        qty = pairs.round_qty(symbol, (equity * config.RISK_PCT) / (config.STOP_ATR_MULT * atr))
+        budget = equity * config.RISK_PCT
+        qty = pairs.round_qty(symbol, budget / (config.STOP_ATR_MULT * atr))
+        if cash is not None:
+            room = max(0.0, cash) * (1 - config.ENTRY_CASH_BUFFER_PCT / 100.0)
+            qty = min(qty, pairs.round_qty(symbol, room / entry_price))
         ok, why = pairs.meets_minimums(symbol, qty, entry_price)
         if not ok:
             return why

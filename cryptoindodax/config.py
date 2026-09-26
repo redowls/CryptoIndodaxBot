@@ -320,6 +320,15 @@ PEAK_FROM_BAR_HIGH = True
 PROFIT_LOCK_PCT_RUNGS = ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0))
 TIME_STOP_HOURS = 120
 CIRCUIT_BREAKER_PCT = 0.04  # rolling 24h realized loss halts new entries
+# Leave this much of the free cash unspent when sizing an entry. The notional
+# cap is a fraction of EQUITY, but an order is paid for in CASH, and equity
+# includes coins already held. Once the open positions appreciate, equity/5
+# drifts above the cash that exists and the exchange rejects the order outright
+# — on 2026-09-26 FARTCOIN failed with [-2010] Insufficient balance on a cap
+# Rp2.344 (1,15%) above the balance. The buffer absorbs that drift and the fee
+# the exchange wants alongside the notional.
+ENTRY_CASH_BUFFER_PCT = 1.0
+
 REENTRY_THROTTLE_HOURS = 24
 SNAPSHOT_MAX_AGE_MIN = 70   # never trade on a stale snapshot
 POLICY_MAX_AGE_HOURS = 48   # stale policy.json is ignored

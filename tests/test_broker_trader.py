@@ -398,3 +398,30 @@ def test_a_dry_run_reports_to_the_log_and_never_to_telegram(monkeypatch):
     monkeypatch.setattr(trader.data, "fetch_tickers", lambda *a, **k: {})
     monkeypatch.setattr(trader.notify, "send", lambda text: pytest.fail("dry run must not send"))
     trader._report_holdings(_led_with_one_open(), {"DOT": 20_500.0}, None, True, now=NOW)
+
+
+def test_a_rejected_order_does_not_burn_the_24h_re_entry_throttle(monkeypatch):
+    """The throttle stops the bot re-entering a coin it just LEFT. An order the
+    exchange refused is not an entry — FARTCOIN lost a day to this on 09-26."""
+    led = {"open": [], "closed": [], "last_entry_attempt": {}}
+    coin = {"timeframes": {"1H": {"last_close": 100.0, "atr14": 1.0}}}
+    monkeypatch.setattr(trader.broker, "market_buy_idr",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            trader.broker.BrokerError("[-2010] Insufficient balance")))
+    monkeypatch.setattr(trader.notify, "send", lambda text: True)
+    assert trader._enter_position(led, "FARTCOIN", coin, 1_000_000.0, "risk_on",
+                                  False, cash=500_000.0) is None
+    assert led["last_entry_attempt"] == {}
+
+
+def test_a_placed_order_does_record_the_throttle(monkeypatch):
+    led = {"open": [], "closed": [], "last_entry_attempt": {}}
+    coin = {"timeframes": {"1H": {"last_close": 100.0, "atr14": 1.0}}}
+    monkeypatch.setattr(trader.broker, "market_buy_idr", lambda *a, **k: "oid-1")
+    monkeypatch.setattr(trader.broker, "wait_for_fill", lambda *a, **k: ("filled", 100.0, 10.0))
+    monkeypatch.setattr(trader.broker, "fill_summary",
+                        lambda *a, **k: {"price": 100.0, "commission": 1.0, "fills": [{}]})
+    monkeypatch.setattr(trader.notify, "send", lambda text: True)
+    trader._enter_position(led, "FARTCOIN", coin, 1_000_000.0, "risk_on", False,
+                           cash=500_000.0)
+    assert "FARTCOIN" in led["last_entry_attempt"]
