@@ -78,3 +78,52 @@ def test_the_median_observed_spread_is_used_not_the_latest():
             {"s": {"BTC": [100.0, 110.0]}, "_when": 2},
             {"s": {"BTC": [100.0, 101.0]}, "_when": 3}]
     assert limitlab.live_spread_pct(["BTC"], rows=rows)["BTC"] == pytest.approx(1.0)
+
+
+# --- the gate -------------------------------------------------------------
+#
+# Registered 2026-09-27, before Phase 1 ran and failed on it. It lives in code
+# so the re-test in three weeks is graded by the same rule rather than by
+# whoever happens to read the table.
+
+def _mech(bps_per_trade, n=1000):
+    return {("wide  0.2-0.6%", 15): {"n": n, "filled": n // 2,
+                                     "bps": bps_per_trade * n, "coins": {"DOT"}}}
+
+
+def _signal(bps_values, window=15):
+    return [{"symbol": "DOT", "by_window": {window: {"filled": True, "bps": b}}}
+            for b in bps_values]
+
+
+def test_both_conditions_are_required_not_either():
+    strong_signal_weak_mechanics = limitlab.gate(_mech(2.0), _signal([50, 60, 70]))
+    assert strong_signal_weak_mechanics["verdict"].startswith("FAIL")
+    weak_signal_strong_mechanics = limitlab.gate(_mech(50.0), _signal([-5, -1, 0]))
+    assert weak_signal_strong_mechanics["verdict"].startswith("FAIL")
+
+
+def test_clearing_both_passes():
+    assert limitlab.gate(_mech(50.0), _signal([20, 30, 40]))["verdict"].startswith("PASS")
+
+
+def test_the_signal_leg_is_judged_on_the_median_not_the_mean():
+    """Phase 1's 5m mean was +11,3 while its median was -0,0: over half the
+    trades gained nothing and a few carried the average."""
+    one_big_winner = _signal([0, 0, 0, 0, 500])
+    assert limitlab.gate(_mech(50.0), one_big_winner)["verdict"].startswith("FAIL")
+
+
+def test_the_phase_1_numbers_reproduce_the_recorded_failure():
+    g = limitlab.gate(_mech(limitlab.PHASE1_RESULT["mechanics_best_bps"]), _signal([0.0]))
+    assert g["passes_mechanics"] is False
+    assert limitlab.PHASE1_RESULT["verdict"] == "FAIL"
+
+
+def test_the_summary_says_ship_nothing_when_the_gate_fails():
+    text = limitlab.summary(limitlab.gate(_mech(2.0), _signal([1.0])))
+    assert "FAIL" in text and "Nothing ships" in text
+
+
+def test_an_empty_run_fails_rather_than_passing_by_default():
+    assert limitlab.gate({}, [])["verdict"].startswith("FAIL")

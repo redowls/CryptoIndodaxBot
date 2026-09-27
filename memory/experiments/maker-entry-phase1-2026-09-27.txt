@@ -86,3 +86,25 @@ prices a bid resting at a RANDOM hour, while the strategy rests one when the
 entry signal fires. If the signal changes fill dynamics, mechanics is a biased
 proxy. This is a reason the experiment is worth repeating with better data. It
 is NOT a reason to override the gate, and it was not used as one.
+
+=== ADDENDUM, same day: THE VERDICT IS FRAGILE IN BOTH DIRECTIONS ===
+
+Six more spread observations (13 -> 19, still all from one afternoon) moved the
+mechanics headline from +5.3 bps to +9.1 — most of the way to the +10 gate,
+from nothing but a re-estimate of the spread.
+
+Scaling every spread by a fifth:
+
+    spreads x0.8   mechanics best +13.9 bps   PASSES the gate
+    spreads x1.0   mechanics best  +9.1 bps   fails
+    spreads x1.2   mechanics best  +8.6 bps   fails
+
+So the whole result is dominated by its weakest input. The registered FAIL
+stands — both legs were required and mechanics does not clear the bar on the
+data in hand — but it should be read as "not demonstrated", not as "refuted". A
+PASS built on the same estimate would have been just as weak, and would have
+sent real money at a live order path.
+
+This is the strongest argument yet for the 2026-10-18 re-test: by then the
+spread input is thousands of hourly observations instead of nineteen from one
+afternoon, and the answer will be worth its confidence either way.

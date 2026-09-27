@@ -47,6 +47,14 @@ from datetime import datetime, timedelta, timezone
 from . import bars1m, config, ledger, pairs, spreads
 
 WINDOWS = (5, 10, 15, 30)
+
+# THE GATE, registered 2026-09-27 BEFORE Phase 1 ran and failed on it. It lives
+# in code so the re-test is graded by the same rule rather than by whoever reads
+# the table next. Both conditions are required; one alone is not a result.
+GATE_MECHANICS_BPS = 10.0      # best bucket must clear this, on the large sample
+GATE_MIN_SIGNAL_MEDIAN_BPS = 0.0   # the MEDIAN trade must gain, not just the mean
+PHASE1_RESULT = {"mechanics_best_bps": 5.4, "signal_median_5m_bps": 0.0,
+                 "signal_n": 16, "verdict": "FAIL", "when": "2026-09-27"}
 MAKER_FEE_PCT = 0.10
 TAKER_FEE_PCT = 0.20
 
@@ -239,6 +247,51 @@ def render(mech, signal, windows=WINDOWS):
     return "\n".join(lines)
 
 
+def gate(mech, signal, windows=WINDOWS):
+    """Grade the run against the registered rule. Returns the verdict and why.
+
+    Phase 1 scored mechanics +5.4 bps at best and a 5m signal median of -0.0 on
+    16 trades, and failed. A re-run is graded identically: a bigger sample is a
+    reason to look again, never a reason to move the bar.
+    """
+    import statistics as _st
+    best = max((a["bps"] / a["n"] for a in mech.values() if a["n"]), default=0.0)
+    medians = {}
+    for m in windows:
+        got = [r["by_window"][m]["bps"] for r in signal if r["by_window"].get(m)]
+        if got:
+            medians[m] = _st.median(got)
+    best_median = max(medians.values(), default=0.0)
+    ok_mech = best >= GATE_MECHANICS_BPS
+    ok_signal = best_median > GATE_MIN_SIGNAL_MEDIAN_BPS
+    return {"mechanics_best_bps": round(best, 1),
+            "signal_best_median_bps": round(best_median, 1),
+            "signal_n": len(signal),
+            "medians": {m: round(v, 1) for m, v in medians.items()},
+            "passes_mechanics": ok_mech, "passes_signal": ok_signal,
+            "verdict": "PASS — design the live pilot" if (ok_mech and ok_signal)
+                       else "FAIL — ship nothing"}
+
+
+def summary(g, windows=WINDOWS):
+    """The short form, for Telegram."""
+    p1 = PHASE1_RESULT
+    lines = ["MAKER-ENTRY RE-TEST (offline, nothing placed)", "",
+             f"  mechanics best   {g['mechanics_best_bps']:+.1f} bps"
+             f"   (gate >= {GATE_MECHANICS_BPS:.0f})"
+             f" {'ok' if g['passes_mechanics'] else 'FAILS'}",
+             f"  signal median    {g['signal_best_median_bps']:+.1f} bps"
+             f"   over {g['signal_n']} entries"
+             f" {'ok' if g['passes_signal'] else 'FAILS'}",
+             "", f"  VERDICT: {g['verdict']}", "",
+             f"  Phase 1 ({p1['when']}) was {p1['mechanics_best_bps']:+.1f} bps "
+             f"on {p1['signal_n']} entries -> {p1['verdict']}."]
+    if not (g["passes_mechanics"] and g["passes_signal"]):
+        lines += ["", "  A bigger sample is a reason to look again, never a reason",
+                  "  to move the bar. Nothing ships."]
+    return "\n".join(lines)
+
+
 def _main(argv=None):
     quotes = live_spread_pct()
     if not quotes:
@@ -247,9 +300,17 @@ def _main(argv=None):
                   for s in config.WATCHLIST
                   if (t := data.fetch_tickers().get(config.pair_id(s))) and t["buy"]}
         print("(no recorded quotes yet — using a live sample; this is an estimate)\n")
+    argv = list(argv if argv is not None else sys.argv[1:])
+    days = 21 if "--since-phase1" in argv else 7
     mech = mechanics(quotes=quotes)
-    sig = signal_sample(quotes=quotes)
+    sig = signal_sample(quotes=quotes, days=days)
+    verdict = gate(mech, sig)
     print(render(mech, sig))
+    print("")
+    print(summary(verdict))
+    if "--telegram" in argv:
+        from . import notify
+        notify.send("CryptoIndodaxBot\n" + summary(verdict))
     return 0
 
 
