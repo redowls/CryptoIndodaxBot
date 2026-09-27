@@ -1,0 +1,88 @@
+MAKER-ENTRY EXPERIMENT — Phase 1 (offline, nothing was placed)
+
+  fee: taker 0.2% -> maker 0.1% = 10 bps saved on a fill
+
+MECHANICS — every hour x coin, no signal involved
+
+  spread bucket       wait      n   fill%   net bps
+  mid  0.05-0.2%        5m    672   44.6%     +2.8
+  mid  0.05-0.2%       10m    672   53.1%     +3.6
+  mid  0.05-0.2%       15m    672   58.0%     +3.4
+  mid  0.05-0.2%       30m    672   67.0%     +3.8
+  very wide >0.6%       5m    504   14.5%     -1.4
+  very wide >0.6%      10m    504   23.6%     +0.5
+  very wide >0.6%      15m    504   29.4%     +3.8
+  very wide >0.6%      30m    504   42.3%     +7.3
+  wide  0.2-0.6%        5m   1176   28.5%     +0.4
+  wide  0.2-0.6%       10m   1176   40.6%     +0.1
+  wide  0.2-0.6%       15m   1176   46.3%     +0.7
+  wide  0.2-0.6%       30m   1176   58.7%     +0.8
+
+SIGNAL — the bot's own entries (16 of them)
+
+  entry                       spread         5m        10m        15m        30m
+  DOT 09-20 18:14              0.50% x      -0 x      -0 x      -0 x      -0
+  XRP 09-20 22:14              0.24% x     +12 F     +34 F     +34 F     +34
+  SOL 09-21 02:14              0.06% F     +16 F     +16 F     +16 F     +16
+  LINK 09-21 17:14             0.46% x      -0 x      -0 x      -0 F     +56
+  ETH 09-21 18:14              0.18% x      -0 x      -0 x      -0 F     +28
+  FARTCOIN 09-22 00:14         0.44% F     +54 F     +54 F     +54 F     +54
+  BTC 09-22 03:14              0.06% F     +16 F     +16 F     +16 F     +16
+  LTC 09-23 11:14              0.48% x      -0 F     +57 F     +57 F     +57
+  MOG 09-24 08:14              1.78% x      -1 x      -1 F    +185 F    +185
+  SOL 09-24 17:14              0.06% F     +16 F     +16 F     +16 F     +16
+  XRP 09-24 20:14              0.24% x      -0 x      +2 x      +1 x     -26
+  DOGE 09-25 15:14             0.17% F     +27 F     +27 F     +27 F     +27
+  DOT 09-25 20:14              0.50% x      -6 x      -6 x      -6 x     -96
+  FARTCOIN 09-26 16:14         0.44% F     +54 F     +54 F     +54 F     +54
+  LINK 09-26 17:14             0.46% x      -0 x      -0 x      -0 x      -0
+  DOT 09-26 21:14              0.50% x      -0 x      -0 x      -0 x     -35
+
+  F = the limit filled (saved the spread + fee)
+  x = never filled, fell back to market at T (bps vs buying at once)
+    5m wait:  37.5% filled, net +11.6 bps/trade
+   10m wait:  50.0% filled, net +16.7 bps/trade
+   15m wait:  56.2% filled, net +28.3 bps/trade
+   30m wait:  68.8% filled, net +24.0 bps/trade
+
+=== VERDICT AGAINST THE PRE-REGISTERED GATE ===
+
+Registered before the run, both required:
+  1. mechanics sample: net entry-cost improvement >= +10 bps per trade
+  2. signal sample: drift on non-fills does not exceed the saving on fills
+
+  1. FAILS. Best bucket anywhere is +5.4 bps (very wide spread, 30m wait), over
+     2.352 observations. The two buckets holding most of the watchlist sit at
+     +0.3 and +3.0 bps. Two buckets are NEGATIVE at short waits.
+  2. Passes, on 16 trades — and weakly. At 5m the MEDIAN trade gains -0.0 bps
+     while the mean says +11.3, so over half of them gain nothing and a few
+     carry the average. One coin (MOG, 1,78% spread) is 41% of the 15m result.
+
+BOTH were required. The gate FAILS. Nothing ships to a live order path.
+
+=== THE STRUCTURAL FINDING, WHICH IS WORTH MORE THAN THE VERDICT ===
+
+There is no sweet spot, and the reason is not bad luck:
+
+  wide spreads  -> big prize, but 12% fill at 5m, and NEGATIVE net at 5-10m
+  tight spreads -> 44-66% fill, but the prize is ~3 bps
+
+The prize and the fill rate are inversely related by construction. To fill at
+the bid, price must come down to you; the entry signal is momentum breaking up.
+Wide spreads mean a large prize and a rare fill. Tight spreads mean a reliable
+fill worth almost nothing. Averaging across them does not produce an edge, it
+produces a rounding error.
+
+=== WHAT WOULD MAKE A RE-TEST LEGITIMATE (NOT A RE-ROLL) ===
+
+The weakest input is the spread estimate: it rests on 13 observations recorded
+today, applied to seven days of history. Phase 0 now records quotes hourly, so
+in 2-3 weeks the same lab runs on real per-hour spreads and roughly 35 entries
+instead of 16. That is new information, not a second roll of the same dice.
+
+A methodological caveat, recorded because noticing it AFTER seeing which arm
+failed is exactly what pre-registration exists to stop: the mechanics sample
+prices a bid resting at a RANDOM hour, while the strategy rests one when the
+entry signal fires. If the signal changes fill dynamics, mechanics is a biased
+proxy. This is a reason the experiment is worth repeating with better data. It
+is NOT a reason to override the gate, and it was not used as one.
