@@ -563,3 +563,21 @@ def test_the_bar_high_peak_can_be_switched_off_and_the_old_behaviour_returns(mon
     h1 = {"last_close": 101.0, "high_1h": 106.0, "atr14": 2.0}
     _, updated = strategy.check_exit(pos, h1, "risk_on", 1.0)
     assert updated["high_water"] == 101.0
+
+
+def test_a_coin_off_the_watchlist_is_refused_even_if_the_snapshot_still_has_it():
+    """MOG was removed on 2026-09-27 and the next dry run still offered it: the
+    snapshot on disk was an hour old. One cycle is enough to open a position."""
+    extras = {"MOG": _extras(), "SOL": _extras()}
+    cands, rejects = strategy.entry_candidates(_snap(_coin("MOG"), _coin("SOL")),
+                                               extras, set(), "risk_on",
+                                               watchlist=["SOL"])
+    assert [s for s, _ in cands] == ["SOL"]
+    assert ("MOG", "not on the watchlist") in rejects
+
+
+def test_the_live_watchlist_is_the_default_so_removal_takes_effect_at_once():
+    snap = {"symbols": [_coin("MOG")]}
+    cands, rejects = strategy.entry_candidates(snap, {}, set(), "risk_on")
+    assert cands == []
+    assert rejects == [("MOG", "not on the watchlist")]

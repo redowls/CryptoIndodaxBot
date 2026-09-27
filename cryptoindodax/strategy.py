@@ -99,12 +99,23 @@ def evaluate_entry(coin, extras, reg):
     return True, "ok"
 
 
-def entry_candidates(snap, extras_by_sym, open_syms, reg, blocked=()):
+def entry_candidates(snap, extras_by_sym, open_syms, reg, blocked=(), watchlist=None):
     """Rank passing coins by 1H ADX desc. Returns (candidates, rejections):
-    candidates = [(symbol, coin_dict)], rejections = [(symbol, reason)]."""
+    candidates = [(symbol, coin_dict)], rejections = [(symbol, reason)].
+
+    Candidates come from the snapshot, but a coin taken OFF the watchlist must
+    stop being buyable at once rather than at the next snapshot. MOG was removed
+    on 2026-09-27 and the very next dry run still offered it, because the file on
+    disk had been written an hour earlier. An hour is one cycle, and one cycle is
+    a position.
+    """
+    watchlist = set(config.WATCHLIST if watchlist is None else watchlist)
     candidates, rejections = [], []
     for coin in snap.get("symbols", []):
         sym = coin.get("symbol")
+        if sym not in watchlist:
+            rejections.append((sym, "not on the watchlist"))
+            continue
         if sym == "BTC" and reg == "risk_off":
             # BTC in confirmed downtrend is the regime, not a long candidate
             rejections.append((sym, "risk_off regime driver"))

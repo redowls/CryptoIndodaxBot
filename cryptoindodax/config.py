@@ -57,6 +57,37 @@ _load_dotenv()
 #     WIF       1.17%   3.50%   3.67%     122.9%     Rp147m     unusable
 #     DOGS      1.21%   3.63%   8.12%     241.3%     Rp9.5m     unusable
 #
+# MOG REMOVED 2026-09-27 after one trade. The screen above was wrong, and the
+# paragraph below is left standing because the reasoning is exactly what has to
+# be re-read when the next thin book is considered.
+#
+# The trade: entered Rp0,002225, stop Rp0,00208119 (-6,46% = 1R), exited at
+# -8,54% for -1,32R and -Rp18.169. The stop was not what lost the money. The 1m
+# bars show the price FLAT at -0,99% for seventeen consecutive minutes, then
+# -9,75% in a single minute, then fully recovered to -0,04% one minute after the
+# bot sold. The first price it was possible to observe below the stop was already
+# 3,3 points past it. There was nothing to react to.
+#
+# What the screen missed, measured over 7 days of archived 1m bars:
+#   * 97,8% of MOG's minutes have NO price movement at all (BTC: 18,8%,
+#     DOGE: 75,0%). It trades in about 2 minutes in every 100.
+#   * worst 1-minute range 17,7%, the widest on the watchlist. One market sell
+#     moves it 9%.
+#   * spread sampled 1,05% to 4,97% against the 0,68% it was admitted on — up to
+#     7x. On the median that is 65% of 1R against a 28% cap.
+# And the position it was sized for grew: the depth argument assumed a Rp127k
+# exit, but MAX_POSITIONS 4 -> 5 plus equity growth made it Rp198.908, ~1,6x.
+#
+# The lesson is not "measure the spread once more carefully". It is that a
+# spread measured at one moment is not a property of the coin: MOG's moved 7x in
+# three weeks while its depth argument stayed superficially intact. Depth and
+# turnover do not capture a book that is EMPTY 98% of the time. `spreads.py`
+# now records quotes continuously so the next screen can use a distribution
+# rather than eight samples over two minutes.
+#
+# (It came within 1,04 points of being saved anyway: the peak was +3,96% and the
+# profit ladder's first rung arms at +5%.)
+#
 # MOG's 24h turnover looks thin next to PIPPIN's, and that nearly ruled it out.
 # It should not have: the bot exits with MARKET orders, so what matters is the
 # resting book, and MOG holds Rp25.2m of bids within 1% of top — a Rp127k exit
@@ -72,7 +103,7 @@ _load_dotenv()
 # coin, and falls back to "neutral" if BTC is absent — which silently raises
 # the ADX entry bar across the board.
 WATCHLIST = ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX", "LINK", "DOT", "LTC", "UNI",
-             "PEPE", "FARTCOIN", "USELESS", "MOG"]
+             "PEPE", "FARTCOIN", "USELESS"]
 
 # Everything is quoted in Indonesian Rupiah.
 QUOTE = "IDR"

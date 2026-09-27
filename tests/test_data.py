@@ -124,10 +124,17 @@ def test_pair_helpers_use_idr_forms():
     assert config.pair_id("BTC") == "btc_idr"
 
 
-def test_watchlist_is_the_fourteen_selected_coins():
+def test_watchlist_is_the_thirteen_selected_coins():
     assert config.WATCHLIST == ["BTC", "ETH", "SOL", "XRP", "DOGE", "AVAX",
                                 "LINK", "DOT", "LTC", "UNI", "PEPE", "FARTCOIN",
-                                "USELESS", "MOG"]
+                                "USELESS"]
+
+
+def test_mog_stays_off_the_watchlist():
+    """Removed 2026-09-27 after one trade: -1,32R on a book that is empty 98% of
+    the minutes in a week. The price sat flat at -0,99% for seventeen minutes,
+    fell 9,75% in one, and recovered a minute after the bot sold. See config."""
+    assert "MOG" not in config.WATCHLIST
 
 
 def test_watchlist_entries_are_live_indodax_idr_pairs():
