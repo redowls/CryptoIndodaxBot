@@ -36,7 +36,7 @@ class FetchError(Exception):
 # Indodax tf code -> bar length in seconds. Used only to recognise the bar that
 # has not finished yet; a code missing from here is left alone rather than
 # guessed at, so an unknown timeframe degrades to the old behaviour.
-PERIOD_SECONDS = {"60": 3600, "240": 14400, "1D": 86400}
+PERIOD_SECONDS = {"1": 60, "5": 300, "15": 900, "60": 3600, "240": 14400, "1D": 86400}
 
 
 def _bar_epoch(bar):

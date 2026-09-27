@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import config, data, indicators
+from . import config, data, indicators, spreads
 
 
 def _start_for(tf_key):
@@ -77,6 +77,13 @@ def run():
             snap["symbols"].append({"symbol": sym, "status": "error", "error": str(e)})
     path = date_dir / f"{now.strftime('%H')}.json"
     path.write_text(json.dumps(snap, indent=2))
+    # Record what it would have COST to trade, which no OHLC bar carries. Wrapped
+    # and last: the snapshot is already written, so a recorder fault can only
+    # lose an observation, never an hour of market data.
+    try:
+        spreads.record(data.fetch_tickers(), now=now)
+    except Exception as e:                    # noqa: BLE001
+        print(f"spread observation skipped ({e})", flush=True)
     return path
 
 

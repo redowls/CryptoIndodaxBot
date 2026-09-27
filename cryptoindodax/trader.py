@@ -13,7 +13,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from . import (broker, config, data, holdings, ledger, lock, notify, pairs,
-               policy, risk, strategy)
+               policy, risk, spreads, strategy)
 
 
 def log(msg):
@@ -143,6 +143,17 @@ def _enter_position(led, sym, coin, equity, reg, dry_run, cash=None):
             f"{risk.sizing_reason(equity, price, atr, sym, cash=cash)}")
         return None
     notional = qty * price
+    # The quote at the instant of the decision — the benchmark any future limit
+    # entry has to beat. Recorded for entries only, which are about one a day,
+    # so the extra call costs nothing and never blocks the order.
+    quote = None
+    try:
+        tick = data.fetch_tickers().get(config.pair_id(sym))
+        if tick:
+            quote = {"bid": tick["buy"], "ask": tick["sell"]}
+            spreads.record({config.pair_id(sym): tick}, symbols=[sym])
+    except Exception:                         # noqa: BLE001
+        pass
     if dry_run:
         log(f"DRY-RUN entry {sym}: qty {qty} @ ~{config.fmt_idr(price)} "
             f"(notional {config.fmt_idr(notional)}), stop {config.fmt_idr(stop)}, "
@@ -169,6 +180,10 @@ def _enter_position(led, sym, coin, equity, reg, dry_run, cash=None):
     pos = ledger.open_position(led, sym, filled_qty, entry_price, atr, order_id,
                                half_size=(reg == "risk_off"),
                                entry_fee=fill["commission"] if fill["fills"] else None)
+    if quote:
+        # Travels with the position so the closed trade carries the benchmark it
+        # was measured against, rather than a spread looked up afterwards.
+        pos["entry_quote"] = quote
     log(f"entry {sym}: {status} qty {filled_qty} @ {config.fmt_price(entry_price)}, "
         f"stop {config.fmt_price(pos['stop'])}")
     notify.send(f"CryptoIndodaxBot ENTRY {sym} qty {filled_qty} @ {config.fmt_price(entry_price)} "
