@@ -3,5 +3,10 @@
     "at": "2026-09-23T02:14:05+00:00",
     "amount": 500823.0,
     "note": "bank top-up; first seen by the trader at 09:14 WIB, cash Rp69.673 -> Rp570.496 with no trade in the interval"
+  },
+  {
+    "at": "2026-09-29T10:14:04+00:00",
+    "amount": 500798.0,
+    "note": "bank top-up #2; 0 coin positions at both 09:14 and 10:14 so no sell could produce it, cash Rp969.864 -> Rp1.470.662"
   }
 ]
