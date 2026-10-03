@@ -1,96 +1,5 @@
 {
-  "open": [
-    {
-      "symbol": "DOGE",
-      "qty": 167.28596491,
-      "entry_price": 1710.0,
-      "entry_time": "2026-10-02T06:14:40.645832+00:00",
-      "initial_stop": 1665.536354687684,
-      "stop": 1665.536354687684,
-      "high_water": 1743.0,
-      "atr_at_entry": 14.82121510410532,
-      "order_id": "133133751",
-      "half_size": false,
-      "entry_fee": 587.0,
-      "entry_fee_estimated": false,
-      "entry_quote": {
-        "bid": 1709.0,
-        "ask": 1710.0
-      }
-    },
-    {
-      "symbol": "LTC",
-      "qty": 0.22862779,
-      "entry_price": 1252000.0,
-      "entry_time": "2026-10-02T08:14:38.723091+00:00",
-      "initial_stop": 1221310.874688135,
-      "stop": 1221310.874688135,
-      "high_water": 1269000.0,
-      "atr_at_entry": 10229.708437288302,
-      "order_id": "67517880",
-      "half_size": false,
-      "entry_fee": 587.0,
-      "entry_fee_estimated": false,
-      "entry_quote": {
-        "bid": 1247000.0,
-        "ask": 1252000.0
-      }
-    },
-    {
-      "symbol": "PEPE",
-      "qty": 3520108.0,
-      "entry_price": 0.08133300000000002,
-      "entry_time": "2026-10-02T10:14:35.030526+00:00",
-      "initial_stop": 0.07773203129829914,
-      "stop": 0.07773203129829914,
-      "high_water": 0.081625,
-      "atr_at_entry": 0.001200322900566958,
-      "order_id": "63969893",
-      "half_size": false,
-      "entry_fee": 587.0,
-      "entry_fee_estimated": false,
-      "entry_quote": {
-        "bid": 0.081332,
-        "ask": 0.081333
-      }
-    },
-    {
-      "symbol": "SOL",
-      "qty": 0.13064573,
-      "entry_price": 2184679.0,
-      "entry_time": "2026-10-02T11:14:32.704921+00:00",
-      "initial_stop": 2130966.6569371894,
-      "stop": 2130966.6569371894,
-      "high_water": 2200000.0,
-      "atr_at_entry": 17904.114354270238,
-      "order_id": "111367914",
-      "half_size": false,
-      "entry_fee": 585.0,
-      "entry_fee_estimated": false,
-      "entry_quote": {
-        "bid": 2182364.0,
-        "ask": 2184679.0
-      }
-    },
-    {
-      "symbol": "AVAX",
-      "qty": 1.42394807,
-      "entry_price": 200442.0,
-      "entry_time": "2026-10-02T11:14:37.563437+00:00",
-      "initial_stop": 195545.1338274317,
-      "stop": 195545.1338274317,
-      "high_water": 200625.0,
-      "atr_at_entry": 1632.2887241894282,
-      "order_id": "22936241",
-      "half_size": false,
-      "entry_fee": 585.0,
-      "entry_fee_estimated": false,
-      "entry_quote": {
-        "bid": 199009.0,
-        "ask": 200442.0
-      }
-    }
-  ],
+  "open": [],
   "closed": [
     {
       "symbol": "BTC",
@@ -773,6 +682,114 @@
       "peak_price": 22609.0,
       "r_multiple": -1.2261,
       "peak_r": 0.0
+    },
+    {
+      "symbol": "PEPE",
+      "qty": 3520108.0,
+      "entry_price": 0.08133300000000002,
+      "exit_price": 0.077659,
+      "entry_time": "2026-10-02T10:14:35.030526+00:00",
+      "exit_time": "2026-10-02T17:30:08.903563+00:00",
+      "pnl": -14654.88,
+      "pnl_gross": -12932.88,
+      "fees": 1722.0,
+      "fees_estimated": false,
+      "order_id": "63969893",
+      "reason": "stop",
+      "initial_stop": 0.07773203129829914,
+      "peak_price": 0.081625,
+      "r_multiple": -1.0203,
+      "peak_r": 0.0811
+    },
+    {
+      "symbol": "SOL",
+      "qty": 0.13064573,
+      "entry_price": 2184679.0,
+      "exit_price": 2130000.0,
+      "entry_time": "2026-10-02T11:14:32.704921+00:00",
+      "exit_time": "2026-10-02T18:25:10.276758+00:00",
+      "pnl": -8881.58,
+      "pnl_gross": -7143.58,
+      "fees": 1738.0,
+      "fees_estimated": false,
+      "order_id": "111367914",
+      "reason": "stop",
+      "initial_stop": 2130966.6569371894,
+      "peak_price": 2200000.0,
+      "r_multiple": -1.018,
+      "peak_r": 0.2852
+    },
+    {
+      "symbol": "DOGE",
+      "qty": 167.28596491,
+      "entry_price": 1710.0,
+      "exit_price": 1662.0,
+      "entry_time": "2026-10-02T06:14:40.645832+00:00",
+      "exit_time": "2026-10-02T18:35:06.823949+00:00",
+      "pnl": -9769.73,
+      "pnl_gross": -8029.73,
+      "fees": 1740.0,
+      "fees_estimated": false,
+      "order_id": "133133751",
+      "reason": "stop",
+      "initial_stop": 1665.536354687684,
+      "peak_price": 1743.0,
+      "r_multiple": -1.0795,
+      "peak_r": 0.7422
+    },
+    {
+      "symbol": "AVAX",
+      "qty": 1.42394807,
+      "entry_price": 200442.0,
+      "exit_price": 194473.99399565885,
+      "entry_time": "2026-10-02T11:14:37.563437+00:00",
+      "exit_time": "2026-10-02T18:35:10.732659+00:00",
+      "pnl": -10231.13,
+      "pnl_gross": -8498.13,
+      "fees": 1733.0,
+      "fees_estimated": false,
+      "order_id": "22936241",
+      "reason": "stop",
+      "initial_stop": 195545.1338274317,
+      "peak_price": 200625.0,
+      "r_multiple": -1.2187,
+      "peak_r": 0.0374
+    },
+    {
+      "symbol": "LTC",
+      "qty": 0.22862779,
+      "entry_price": 1252000.0,
+      "exit_price": 1213000.0,
+      "entry_time": "2026-10-02T08:14:38.723091+00:00",
+      "exit_time": "2026-10-02T18:40:07.443119+00:00",
+      "pnl": -10654.48,
+      "pnl_gross": -8916.48,
+      "fees": 1738.0,
+      "fees_estimated": false,
+      "order_id": "67517880",
+      "reason": "stop",
+      "initial_stop": 1221310.874688135,
+      "peak_price": 1269000.0,
+      "r_multiple": -1.2708,
+      "peak_r": 0.5539
+    },
+    {
+      "symbol": "FARTCOIN",
+      "qty": 83.61202355,
+      "entry_price": 3227.0,
+      "exit_price": 3032.0,
+      "entry_time": "2026-10-02T18:14:34.649969+00:00",
+      "exit_time": "2026-10-02T18:45:07.996525+00:00",
+      "pnl": -17910.34,
+      "pnl_gross": -16304.34,
+      "fees": 1606.0,
+      "fees_estimated": false,
+      "order_id": "66776699",
+      "reason": "stop",
+      "initial_stop": 3038.612467124281,
+      "peak_price": 3227.0,
+      "r_multiple": -1.0351,
+      "peak_r": 0.0
     }
   ],
   "last_entry_attempt": {
@@ -788,6 +805,6 @@
     "SOL": "2026-10-02T11:14:31.193565+00:00",
     "MOG": "2026-09-24T08:14:32.019478+00:00",
     "DOGE": "2026-10-02T06:14:39.230199+00:00",
-    "FARTCOIN": "2026-09-26T16:14:32.786891+00:00"
+    "FARTCOIN": "2026-10-02T18:14:33.179699+00:00"
   }
 }
